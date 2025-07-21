@@ -1,4 +1,4 @@
-'use client'
+'use client';
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -7,28 +7,41 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-const handleLogin = (e) => {
-  e.preventDefault();
-  let role = "";
-  if (email === "admin@keymatic.com" && password === "admin123") {
-    role = "admin";
-  } else if (email === "owner@keymatic.com" && password === "owner123") {
-    role = "owner";
-  } else if (email === "client@keymatic.com" && password === "client123") {
-    role = "client";
-  } else {
-    alert("Invalid credentials");
-    return;
-  }
-  localStorage.setItem("user", JSON.stringify({ email, role }));
-  if (role === "admin") {
-    router.push("/admin");
-  } else if (role === "owner") {
-    router.push("/owner-panel");
-  } else if (role === "client") {
-    router.push("/client-panel");
-  }
-};
+  const handleLogin = (e) => {
+    e.preventDefault();
+    let role = "";
+
+    if (email === "admin@keymatic.com" && password === "admin123") {
+      role = "admin";
+    } else if (email === "owner@keymatic.com" && password === "owner123") {
+      role = "owner";
+    } else if (email === "client@keymatic.com" && password === "client123") {
+      role = "client";
+    } else {
+      alert("Invalid credentials");
+      return;
+    }
+
+    // Save user in localStorage
+    localStorage.setItem("user", JSON.stringify({ email, role }));
+
+    // Redirect based on role
+    switch (role) {
+      case "admin":
+        router.push("/admin");
+        break;
+      case "owner":
+        router.push("/owner-panel");
+        break;
+      case "client":
+        router.push("/client-panel");
+        break;
+      default:
+        router.push("/"); // fallback to home
+        break;
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="bg-white shadow rounded-lg p-8 max-w-md w-full">
