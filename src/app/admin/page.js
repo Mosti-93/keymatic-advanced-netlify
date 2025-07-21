@@ -44,7 +44,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
           <Link href="/create-key" className="flex items-center justify-center p-6 bg-blue-600 text-white rounded-xl shadow hover:bg-blue-700 transition text-lg font-semibold">🔑 Create Key</Link>
           <Link href="/create-owner" className="flex items-center justify-center p-6 bg-purple-600 text-white rounded-xl shadow hover:bg-purple-700 transition text-lg font-semibold">👤 Add Owner</Link>
-          <Link href="/owner-panel" className="flex items-center justify-center p-6 bg-green-600 text-white rounded-xl shadow hover:bg-green-700 transition text-lg font-semibold">🏭 Create Machine</Link>
+          <Link href="/create-machine" className="flex items-center justify-center p-6 bg-green-600 text-white rounded-xl shadow hover:bg-green-700 transition text-lg font-semibold">🏭 Create Machine</Link>
           <Link href="/link-key" className="flex items-center justify-center p-6 bg-yellow-500 text-white rounded-xl shadow hover:bg-yellow-600 transition text-lg font-semibold">🔗 Link Key</Link>
           <Link href="/link-owner" className="flex items-center justify-center p-6 bg-pink-500 text-white rounded-xl shadow hover:bg-pink-600 transition text-lg font-semibold">🔗 Link Owner</Link>
           <Link href="/add-client" className="flex items-center justify-center p-6 bg-indigo-500 text-white rounded-xl shadow hover:bg-indigo-600 transition text-lg font-semibold">👥 Add Client</Link>
