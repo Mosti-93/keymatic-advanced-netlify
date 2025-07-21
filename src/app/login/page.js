@@ -7,7 +7,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-const handleLogin = (e: React.FormEvent) => {
+const handleLogin = (e) => {
   e.preventDefault();
   let role = "";
   if (email === "admin@keymatic.com" && password === "admin123") {
