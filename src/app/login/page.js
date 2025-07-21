@@ -43,20 +43,21 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="min-h-screen flex items-center justify-center bg-white">
       <div className="bg-white shadow rounded-lg p-8 max-w-md w-full">
         <h1 className="text-3xl font-bold text-center text-gray-900 mb-6">🔐 Keymatic Login</h1>
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="Enter admin email"
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
-              required
-            />
+           <input
+  type="email"
+  value={email}
+  onChange={(e) => setEmail(e.target.value)}
+  placeholder="Enter user email"
+className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-black placeholder-black focus:text-black focus:placeholder-black focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+  required
+/>
+
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700">Password</label>
@@ -77,7 +78,7 @@ export default function LoginPage() {
           </button>
         </form>
         <p className="mt-4 text-sm text-gray-500 text-center">
-          Test login: admin@keymatic.com / admin123
+          For demo or creat account please contact us
         </p>
       </div>
     </div>
