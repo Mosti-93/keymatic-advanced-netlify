@@ -15,6 +15,12 @@ export default function CreateMachinePage() {
   const [message, setMessage] = useState('');
   const [machines, setMachines] = useState([]);
 
+  // 🔥 Validate Machine ID format (3 chars, A-D and 0-9)
+  const isValidMachineId = (id) => {
+    const regex = /^[ABCD0-9]{3}$/;
+    return regex.test(id);
+  };
+
   // Fetch all machines
   useEffect(() => {
     fetchMachines();
@@ -40,12 +46,19 @@ export default function CreateMachinePage() {
 
     const { machineId, machineName, location, capacity } = form;
 
+    // 🔥 Validate Machine ID format
+    if (!isValidMachineId(machineId)) {
+      setMessage('⚠️ Machine ID must be 3 characters (A-D and 0-9 only).');
+      setLoading(false);
+      return;
+    }
+
     // Insert into Supabase
     const { data, error } = await supabase
       .from('machines')
       .insert([{ 
         machine_id: machineId, 
-        "Machine name": machineName,  // column has space!
+        "Machine name": machineName,  // column with space!
         location, 
         capacity: parseInt(capacity)
       }]);
@@ -109,6 +122,10 @@ export default function CreateMachinePage() {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring focus:ring-green-200 focus:ring-opacity-50"
                 required
               />
+              {/* Rule hint */}
+              <p className="mt-1 text-xs text-gray-500">
+                Must be exactly 3 characters (A-D, 0-9 only).
+              </p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Machine Name</label>
