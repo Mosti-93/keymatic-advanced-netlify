@@ -14,14 +14,14 @@ export default function CreateMachinePage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [machines, setMachines] = useState([]);
+  const [editMode, setEditMode] = useState(false);
+  const [editingMachineId, setEditingMachineId] = useState(null);
 
-  // 🔥 Validate Machine ID format (3 chars, A-D and 0-9)
   const isValidMachineId = (id) => {
-    const regex = /^[ABCD0-9]{3}$/;
+    const regex = /^[A-D0-9]{3}$/;
     return regex.test(id);
   };
 
-  // Fetch all machines
   useEffect(() => {
     fetchMachines();
   }, []);
@@ -44,44 +44,66 @@ export default function CreateMachinePage() {
     setLoading(true);
     setMessage('');
 
-    const { machineId, machineName, location, capacity } = form;
+let { machineId, machineName, location, capacity } = form;
+machineId = machineId.toUpperCase(); // Force uppercase before validation
 
-    // 🔥 Validate Machine ID format
     if (!isValidMachineId(machineId)) {
       setMessage('⚠️ Machine ID must be 3 characters (A-D and 0-9 only).');
       setLoading(false);
       return;
     }
 
-    // Insert into Supabase
-    const { data, error } = await supabase
-      .from('machines')
-      .insert([{ 
-        machine_id: machineId, 
-        "Machine name": machineName,  // column with space!
-        location, 
-        capacity: parseInt(capacity)
-      }]);
+    let data, error;
+
+    if (editMode) {
+      ({ data, error } = await supabase
+        .from('machines')
+        .update({
+          machine_id: machineId,
+          "Machine name": machineName,
+          location,
+          capacity: parseInt(capacity)
+        })
+        .eq('id', editingMachineId));
+    } else {
+      ({ data, error } = await supabase
+        .from('machines')
+        .insert([{
+          machine_id: machineId,
+          "Machine name": machineName,
+          location,
+          capacity: parseInt(capacity)
+        }]));
+    }
 
     if (error) {
-      if (error.code === '23505') { // Unique violation
+      if (error.code === '23505') {
         setMessage('⚠️ Machine ID or Machine Name already exists.');
       } else {
-        console.error('Error inserting machine:', error);
+        console.error('Error saving machine:', error);
         setMessage('❌ Failed to save machine. Try again.');
       }
     } else {
-      console.log('Machine inserted:', data);
-      setMessage('✅ Machine saved successfully!');
+      setMessage(editMode ? '✅ Machine updated successfully!' : '✅ Machine saved successfully!');
       setForm({ machineId: '', machineName: '', location: '', capacity: '' });
-      fetchMachines(); // Refresh table
+      setEditMode(false);
+      setEditingMachineId(null);
+      fetchMachines();
     }
 
     setLoading(false);
   };
 
   const handleEdit = (machine) => {
-    alert(`Edit feature coming soon for: ${machine["Machine name"]}`);
+    setForm({
+      machineId: machine.machine_id || '',
+      machineName: machine["Machine name"] || '',
+      location: machine.location || '',
+      capacity: machine.capacity?.toString() || ''
+    });
+    setEditMode(true);
+    setEditingMachineId(machine.id);
+    setMessage(`✏️ Editing Machine: ${machine["Machine name"]}`);
   };
 
   const handleDelete = async (id) => {
@@ -94,7 +116,7 @@ export default function CreateMachinePage() {
       setMessage('❌ Failed to delete machine.');
     } else {
       setMessage('✅ Machine deleted successfully.');
-      fetchMachines(); // Refresh table
+      fetchMachines();
     }
   };
 
@@ -107,9 +129,8 @@ export default function CreateMachinePage() {
       </header>
 
       <main className="max-w-7xl mx-auto py-10 sm:px-6 lg:px-8 space-y-8">
-        {/* Form */}
         <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">Add New Machine</h2>
+          <h2 className="text-xl font-semibold mb-4">{editMode ? 'Edit Machine' : 'Add New Machine'}</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Machine ID</label>
@@ -122,10 +143,7 @@ export default function CreateMachinePage() {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring focus:ring-green-200 focus:ring-opacity-50"
                 required
               />
-              {/* Rule hint */}
-              <p className="mt-1 text-xs text-gray-500">
-                Must be exactly 3 characters (A-D, 0-9 only).
-              </p>
+              <p className="mt-1 text-xs text-gray-500">Must be exactly 3 characters (A-D, 0-9 only).</p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700">Machine Name</label>
@@ -163,18 +181,33 @@ export default function CreateMachinePage() {
                 required
               />
             </div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="inline-flex items-center px-4 py-2 bg-green-600 border border-transparent rounded-md font-semibold text-white hover:bg-green-700 transition"
-            >
-              {loading ? 'Saving...' : 'Save Machine'}
-            </button>
+            <div className="flex space-x-2">
+              <button
+                type="submit"
+                disabled={loading}
+                className="inline-flex items-center px-4 py-2 bg-green-600 border border-transparent rounded-md font-semibold text-white hover:bg-green-700 transition"
+              >
+                {loading ? 'Saving...' : editMode ? 'Update Machine' : 'Save Machine'}
+              </button>
+              {editMode && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForm({ machineId: '', machineName: '', location: '', capacity: '' });
+                    setEditMode(false);
+                    setEditingMachineId(null);
+                    setMessage('');
+                  }}
+                  className="px-4 py-2 bg-gray-400 text-white rounded-md hover:bg-gray-500"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
           </form>
           {message && <p className="mt-4 text-center text-sm">{message}</p>}
         </div>
 
-        {/* Table */}
         <div className="bg-white shadow rounded-lg p-6">
           <h2 className="text-xl font-semibold mb-4 flex items-center">📋 Existing Machines</h2>
           <div className="overflow-x-auto">
