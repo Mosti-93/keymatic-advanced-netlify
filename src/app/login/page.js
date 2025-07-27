@@ -13,7 +13,6 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
     try {
-      // 1. Try login
       const { error: loginError } = await supabase.auth.signInWithPassword({ email, password });
       if (loginError) {
         setError(
@@ -25,20 +24,17 @@ export default function LoginPage() {
         return;
       }
 
-      // 2. Get user
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         setError("Unexpected error: user not found");
         return;
       }
 
-      // 3. (Optional) Mirror last_login
       await supabase
         .from('users')
         .update({ last_login: user.last_sign_in_at })
         .eq('id', user.id);
 
-      // 4. Get role
       const { data: profile, error: profileError } = await supabase
         .from('users')
         .select('role')
@@ -56,7 +52,6 @@ export default function LoginPage() {
         return;
       }
 
-      // 5. Store in localStorage and redirect
       localStorage.setItem("role", role);
       localStorage.setItem("userId", user.id);
 
@@ -105,9 +100,18 @@ export default function LoginPage() {
               required
             />
           </div>
-          <button type="submit" className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition">Login</button>
+          <button type="submit" className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition">
+            Login
+          </button>
           {error && <div className="text-red-600 text-center">{error}</div>}
         </form>
+        {/* Forgot password link */}
+        <p className="mt-2 text-sm text-center">
+          <a href="/reset-password" className="text-blue-600 hover:underline">
+            Forgot your password?
+          </a>
+        </p>
+        {/* Signup link */}
         <p className="mt-4 text-sm text-gray-500 text-center">
           Don&apos;t have an account?{" "}
           <a href="/signup" className="text-blue-600 hover:underline">
