@@ -3,18 +3,24 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/utils/supabaseClient";
 
 export default function CreateOwnerPage() {
-  const [form, setForm] = useState({ name: '', email: '', phone: '', city: '', country: '' });
+  const [form, setForm] = useState({ name: '', email: '', phone: '', country: '' });
   const [owners, setOwners] = useState([]);
   const [editMode, setEditMode] = useState(false);
-  const [editingId, setEditingId] = useState(null);
+  const [editingUserId, setEditingUserId] = useState(null);
   const [message, setMessage] = useState('');
 
   useEffect(() => {
     fetchOwners();
   }, []);
 
+  // Fetch directly from users where role = 'owner'
   const fetchOwners = async () => {
-    const { data, error } = await supabase.from('owners').select('*').order('inserted_at', { ascending: false });
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, name, email, phone, country, role, created_at, last_login')
+      .eq('role', 'owner')
+      .order('created_at', { ascending: false });
+
     if (error) {
       console.error("Failed to fetch owners:", error);
     } else {
@@ -29,77 +35,79 @@ export default function CreateOwnerPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage('');
-
-    const { name, email, phone, city, country } = form;
+    const { name, email, phone, country } = form;
 
     if (!name.trim()) {
       setMessage('⚠️ Owner name is required.');
       return;
     }
 
-    let result;
     if (editMode) {
-      result = await supabase
-        .from('owners')
-        .update({
-          full_name: name,
-          email,
-          phone,
-          city,
-          country
-        })
-        .eq('id', editingId);
-    } else {
-      result = await supabase
-        .from('owners')
-        .insert([{
-          full_name: name,
-          email,
-          phone,
-          city,
-          country
-        }]);
-    }
+      // Update users table
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ name, email, phone, country })
+        .eq('id', editingUserId);
 
-    const { error } = result;
-
-    if (error) {
-      console.error("Error saving owner:", error);
-      if (error.message.includes('unique_email')) {
-        setMessage('⚠️ This email is already in use.');
-      } else if (error.message.includes('unique_phone')) {
-        setMessage('⚠️ This phone number is already in use.');
-      } else {
-        setMessage(`❌ ${error.message}`);
+      if (updateError) {
+        setMessage('❌ Failed to update owner: ' + updateError.message);
+        return;
       }
+
+      setMessage('✅ Owner updated.');
     } else {
-      setMessage(editMode ? '✅ Owner updated.' : '✅ Owner saved.');
-      setForm({ name: '', email: '', phone: '', city: '', country: '' });
-      setEditMode(false);
-      setEditingId(null);
-      fetchOwners();
+      // Insert into users with role = 'owner'
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .insert([{
+          name,
+          email,
+          phone,
+          country,
+          role: 'owner'
+        }])
+        .select();
+
+      if (userError) {
+        if (userError.message?.includes('unique_email')) {
+          setMessage('⚠️ This email is already in use.');
+        } else if (userError.message?.includes('unique_phone')) {
+          setMessage('⚠️ This phone number is already in use.');
+        } else {
+          setMessage('❌ Failed to create owner: ' + userError.message);
+        }
+        return;
+      }
+
+      setMessage('✅ Owner saved.');
     }
+
+    setForm({ name: '', email: '', phone: '', country: '' });
+    setEditMode(false);
+    setEditingUserId(null);
+    fetchOwners();
   };
 
   const handleEdit = (owner) => {
     setForm({
-      name: owner.full_name || '',
+      name: owner.name || '',
       email: owner.email || '',
       phone: owner.phone || '',
-      city: owner.city || '',
       country: owner.country || ''
     });
     setEditMode(true);
-    setEditingId(owner.id);
-    setMessage(`✏️ Editing Owner: ${owner.full_name}`);
+    setEditingUserId(owner.id);
+    setMessage(`✏️ Editing Owner: ${owner.name}`);
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (userId) => {
     if (!confirm('Are you sure you want to delete this owner?')) return;
-    const { error } = await supabase.from('owners').delete().eq('id', id);
+    const { error } = await supabase.from('users').delete().eq('id', userId);
     if (!error) {
       setMessage('✅ Owner deleted.');
       fetchOwners();
+    } else {
+      setMessage('❌ Failed to delete owner: ' + error.message);
     }
   };
 
@@ -113,13 +121,12 @@ export default function CreateOwnerPage() {
 
       <main className="max-w-7xl mx-auto py-10 px-4 space-y-8">
         <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">{editMode ? 'Edit Owner' : 'Add New Owner'}</h2>
+          <h2 className="text-xl font-semibold mb-4">{editMode ? 'Edit Owner' : 'Edit Owner'}</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             {[
               { label: "Owner Name", name: "name", type: "text" },
               { label: "Email", name: "email", type: "email" },
               { label: "Phone", name: "phone", type: "tel" },
-              { label: "City", name: "city", type: "text" },
               { label: "Country", name: "country", type: "text" }
             ].map(({ label, name, type }) => (
               <div key={name}>
@@ -138,7 +145,7 @@ export default function CreateOwnerPage() {
             <div className="flex space-x-2">
               <button
                 type="submit"
-className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
               >
                 {editMode ? 'Update Owner' : 'Save Owner'}
               </button>
@@ -146,9 +153,9 @@ className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
                 <button
                   type="button"
                   onClick={() => {
-                    setForm({ name: '', email: '', phone: '', city: '', country: '' });
+                    setForm({ name: '', email: '', phone: '', country: '' });
                     setEditMode(false);
-                    setEditingId(null);
+                    setEditingUserId(null);
                     setMessage('');
                   }}
                   className="bg-gray-400 text-white px-4 py-2 rounded-md hover:bg-gray-500"
@@ -166,41 +173,39 @@ className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-100">
               <tr>
-                {["Name", "Email", "Phone", "City", "Country", "Actions"].map((col) => (
-<th key={col} className={`px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider ${col === "Actions" ? "text-right" : "text-left"}`}>
-  {col}
-</th>
+                {["Name", "Email", "Phone", "Country", "Actions"].map((col) => (
+                  <th key={col} className={`px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider ${col === "Actions" ? "text-right" : "text-left"}`}>
+                    {col}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {owners.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-2 text-center text-gray-500">No owners found.</td>
+                  <td colSpan={5} className="px-4 py-2 text-center text-gray-500">No owners found.</td>
                 </tr>
               ) : (
                 owners.map((o) => (
                   <tr key={o.id}>
-                    <td className="px-4 py-2">{o.full_name}</td>
+                    <td className="px-4 py-2">{o.name}</td>
                     <td className="px-4 py-2">{o.email}</td>
                     <td className="px-4 py-2">{o.phone}</td>
-                    <td className="px-4 py-2">{o.city}</td>
                     <td className="px-4 py-2">{o.country}</td>
-<td className="px-4 py-2 space-x-2 text-right">
-  <button
-    onClick={() => handleEdit(o)}
-    className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
-  >
-    Edit
-  </button>
-  <button
-    onClick={() => handleDelete(o.id)}
-    className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700"
-  >
-    Delete
-  </button>
-</td>
-
+                    <td className="px-4 py-2 space-x-2 text-right">
+                      <button
+                        onClick={() => handleEdit(o)}
+                        className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(o.id)}
+                        className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700"
+                      >
+                        Delete
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}

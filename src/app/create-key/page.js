@@ -15,32 +15,54 @@ export default function CreateKeyPage() {
   const [keys, setKeys] = useState([]);
   const [machines, setMachines] = useState([]);
   const [owners, setOwners] = useState([]);
+  const [filteredOwners, setFilteredOwners] = useState([]);
+  const [ownerSearch, setOwnerSearch] = useState('');
+  const [selectedOwner, setSelectedOwner] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [editingKeyId, setEditingKeyId] = useState(null);
 
   useEffect(() => {
-    fetchKeys();
-    fetchMachines();
-    fetchOwners();
+    fetchAll();
   }, []);
 
-  const fetchKeys = async () => {
-    const { data, error } = await supabase.from('keys').select('*');
-    if (!error) setKeys(data);
-  };
+  const fetchAll = async () => {
+    const [keysRes, machinesRes, ownersRes] = await Promise.all([
+      supabase.from('keys').select('*'),
+      supabase.from('machines').select('id, machine_id, "Machine name"'),
+      supabase.from('users').select('id, name, email, phone').eq('role', 'owner')
+    ]);
 
-  const fetchMachines = async () => {
-    const { data, error } = await supabase.from('machines').select('id, "Machine name"');
-    if (!error) setMachines(data);
-  };
-
-  const fetchOwners = async () => {
-    const { data, error } = await supabase.from('owners').select('id, full_name');
-    if (!error) setOwners(data);
+    if (!keysRes.error) setKeys(keysRes.data || []);
+    if (!machinesRes.error) setMachines(machinesRes.data || []);
+    if (!ownersRes.error) setOwners(ownersRes.data || []);
   };
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
+  };
+
+  // Owner search logic (like Add Client)
+  const handleOwnerSearch = (e) => {
+    const value = e.target.value;
+    setOwnerSearch(value);
+    setSelectedOwner(null);
+    setForm(prev => ({ ...prev, owner_id: '' }));
+    if (value.length < 2) {
+      setFilteredOwners([]);
+      return;
+    }
+    const matches = owners.filter(owner =>
+      (owner.name && owner.name.toLowerCase().includes(value.trim().toLowerCase())) ||
+      (owner.email && owner.email.toLowerCase().includes(value.trim().toLowerCase()))
+    );
+    setFilteredOwners(matches || []);
+  };
+
+  const handleOwnerSelect = (owner) => {
+    setSelectedOwner(owner);
+    setOwnerSearch(owner.name + (owner.email ? ` (${owner.email})` : ''));
+    setFilteredOwners([]);
+    setForm(prev => ({ ...prev, owner_id: owner.id }));
   };
 
   const handleSubmit = async (e) => {
@@ -48,9 +70,9 @@ export default function CreateKeyPage() {
     setLoading(true);
     setMessage('');
 
-    const { key_id, UID, room_number } = form;
-    if (!key_id || !UID || !room_number) {
-      setMessage('⚠️ key_id, UID, and room_number are required.');
+    const { key_id, UID } = form;
+    if (!key_id || !UID) {
+      setMessage('⚠️ key_id and UID are required.');
       setLoading(false);
       return;
     }
@@ -58,41 +80,42 @@ export default function CreateKeyPage() {
     const payload = {
       key_id,
       UID,
-      room_number,
+      room_number: form.room_number || null,
       machine_id: form.machine_id || null,
       owner_id: form.owner_id || null,
     };
 
-    let response;
-    if (editMode) {
-      response = await supabase.from('keys').update(payload).eq('id', editingKeyId);
-    } else {
-      response = await supabase.from('keys').insert([payload]);
-    }
+    const response = editMode
+      ? await supabase.from('keys').update(payload).eq('id', editingKeyId)
+      : await supabase.from('keys').insert([payload]);
 
-    const { error } = response;
-    if (error) {
-      console.error('Insert Error:', error);
-      setMessage(`❌ Failed to save key: ${error.message}`);
+    if (response.error) {
+      console.error('Insert Error:', response.error);
+      setMessage(`❌ Failed to save key: ${response.error.message}`);
     } else {
       setMessage(editMode ? '✅ Key updated.' : '✅ Key saved.');
       setForm({ key_id: '', UID: '', room_number: '', machine_id: '', owner_id: '' });
+      setSelectedOwner(null);
+      setOwnerSearch('');
       setEditMode(false);
       setEditingKeyId(null);
-      fetchKeys();
+      fetchAll();
     }
 
     setLoading(false);
   };
 
   const handleEdit = (key) => {
+    const ownerObj = owners.find(o => o.id === key.owner_id) || null;
     setForm({
       key_id: key.key_id,
       UID: key.UID,
-      room_number: key.room_number,
+      room_number: key.room_number || '',
       machine_id: key.machine_id || '',
       owner_id: key.owner_id || ''
     });
+    setSelectedOwner(ownerObj);
+    setOwnerSearch(ownerObj ? (ownerObj.name + (ownerObj.email ? ` (${ownerObj.email})` : '')) : '');
     setEditMode(true);
     setEditingKeyId(key.id);
     setMessage(`✏️ Editing Key: ${key.key_id}`);
@@ -103,9 +126,12 @@ export default function CreateKeyPage() {
     const { error } = await supabase.from('keys').delete().eq('id', id);
     if (!error) {
       setMessage('✅ Key deleted.');
-      fetchKeys();
+      fetchAll();
     }
   };
+
+  const getMachine = (id) => machines.find(m => m.id === id);
+  const getOwner = (id) => owners.find(o => o.id === id);
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800">
@@ -119,10 +145,10 @@ export default function CreateKeyPage() {
           <h2 className="text-xl font-semibold mb-4">{editMode ? 'Edit Key' : 'Add New Key'}</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             {[
-              { name: 'key_id', label: 'Key ID' },
-              { name: 'UID', label: 'UID' },
-              { name: 'room_number', label: 'Room No' }
-            ].map(({ name, label }) => (
+              { name: 'key_id', label: 'Key ID', required: true },
+              { name: 'UID', label: 'UID', required: true },
+              { name: 'room_number', label: 'Room No', required: false }
+            ].map(({ name, label, required }) => (
               <div key={name}>
                 <label className="block text-sm font-medium">{label}</label>
                 <input
@@ -131,7 +157,7 @@ export default function CreateKeyPage() {
                   value={form[name]}
                   onChange={handleChange}
                   className="mt-1 block w-full border rounded-md p-2"
-                  required
+                  {...(required ? { required: true } : {})}
                 />
               </div>
             ))}
@@ -151,45 +177,65 @@ export default function CreateKeyPage() {
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium">Owner (optional)</label>
-              <select
-                name="owner_id"
-                value={form.owner_id}
-                onChange={handleChange}
+            {/* Owner Search Field */}
+            <div className="relative">
+              <label className="block text-sm font-medium">Owner (optional, search by name or email)</label>
+              <input
+                type="text"
+                value={ownerSearch}
+                onChange={handleOwnerSearch}
+                placeholder="Type owner name or email"
                 className="mt-1 block w-full border rounded-md p-2"
-              >
-                <option value="">-- Select Owner --</option>
-                {owners.map((o) => (
-                  <option key={o.id} value={o.id}>{o.full_name}</option>
-                ))}
-              </select>
+                autoComplete="off"
+              />
+              {filteredOwners.length > 0 && (
+                <ul className="absolute z-10 bg-white border border-gray-300 rounded-md shadow max-h-40 overflow-y-auto mt-1 w-full">
+                  {filteredOwners.map((owner) => (
+                    <li
+                      key={owner.id}
+                      onClick={() => handleOwnerSelect(owner)}
+                      className="p-2 hover:bg-blue-100 cursor-pointer"
+                    >
+                      <span className="font-medium">{owner.name}</span>
+                      <span className="ml-2 text-xs text-gray-600">{owner.email}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {selectedOwner && (
+                <div className="mt-3 p-3 bg-gray-100 rounded-md shadow">
+                  <h3 className="text-base font-semibold">{selectedOwner.name}</h3>
+                  <p className="text-sm text-gray-700">Email: {selectedOwner.email}</p>
+                  {selectedOwner.phone && <p className="text-sm text-gray-700">Phone: {selectedOwner.phone}</p>}
+                </div>
+              )}
             </div>
 
             <div className="flex space-x-2">
-  <button
-    type="submit"
-    disabled={loading}
-    className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
-  >
-    {loading ? 'Saving...' : editMode ? 'Update Key' : 'Save Key'}
-  </button>
-  {editMode && (
-    <button
-      type="button"
-      onClick={() => {
-        setForm({ key_id: '', UID: '', room_number: '', machine_id: '', owner_id: '' });
-        setEditMode(false);
-        setEditingKeyId(null);
-        setMessage('');
-      }}
-      className="bg-gray-400 text-white px-4 py-2 rounded-md hover:bg-gray-500"
-    >
-      Cancel
-    </button>
-  )}
-</div>
-
+              <button
+                type="submit"
+                disabled={loading}
+                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
+              >
+                {loading ? 'Saving...' : editMode ? 'Update Key' : 'Save Key'}
+              </button>
+              {editMode && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setForm({ key_id: '', UID: '', room_number: '', machine_id: '', owner_id: '' });
+                    setEditMode(false);
+                    setEditingKeyId(null);
+                    setOwnerSearch('');
+                    setSelectedOwner(null);
+                    setMessage('');
+                  }}
+                  className="bg-gray-400 text-white px-4 py-2 rounded-md hover:bg-gray-500"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
           </form>
           {message && <p className="mt-4 text-sm text-center">{message}</p>}
         </div>
@@ -199,41 +245,43 @@ export default function CreateKeyPage() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-100">
               <tr>
-                {["key_id", "UID", "room_number", "machine_id", "owner_id"].map((col) => (
+                {["key_id", "UID", "room_number", "machine_id", "machine_name", "owner_name"].map((col) => (
                   <th key={col} className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {col}
                   </th>
                 ))}
                 <th className="px-4 py-2 text-right">Actions</th>
-
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {keys.map((k) => (
-                <tr key={k.id}>
-                  <td className="px-4 py-2">{k.key_id}</td>
-                  <td className="px-4 py-2">{k.UID}</td>
-                  <td className="px-4 py-2">{k.room_number}</td>
-                  <td className="px-4 py-2">{k.machine_id}</td>
-                  <td className="px-4 py-2">{k.owner_id}</td>
-                 <td className="px-4 py-2 space-x-2 text-right">
-  <button
-    onClick={() => handleEdit(k)}
-    className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
-  >
-    Edit
-  </button>
-  <button
-    onClick={() => handleDelete(k.id)}
-    className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700"
-  >
-    Delete
-  </button>
-</td>
-
-
-                </tr>
-              ))}
+              {keys.map((k) => {
+                const machine = getMachine(k.machine_id);
+                const owner = getOwner(k.owner_id);
+                return (
+                  <tr key={k.id}>
+                    <td className="px-4 py-2">{k.key_id}</td>
+                    <td className="px-4 py-2">{k.UID}</td>
+                    <td className="px-4 py-2">{k.room_number}</td>
+                    <td className="px-4 py-2">{machine?.machine_id || '—'}</td>
+                    <td className="px-4 py-2">{machine?.["Machine name"] || '—'}</td>
+                    <td className="px-4 py-2">{owner?.name || '—'}</td>
+                    <td className="px-4 py-2 space-x-2 text-right">
+                      <button
+                        onClick={() => handleEdit(k)}
+                        className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(k.id)}
+                        className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
