@@ -6,7 +6,7 @@ import { supabase } from "@/utils/supabaseClient";
 export default function OwnerPanelPage() {
   const router = useRouter();
   const [ownerId, setOwnerId] = useState(null);
-  const [profile, setProfile] = useState(null); // Store owner profile
+  const [profile, setProfile] = useState(null);
   const [form, setForm] = useState({
     firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: ''
   });
@@ -18,36 +18,7 @@ export default function OwnerPanelPage() {
   const [editMode, setEditMode] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
-  // Fetch owner info
-  useEffect(() => {
-    const fetchOwner = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return router.push("/");
-      const { data: profile, error } = await supabase
-        .from("users")
-        .select("id, role, name, email")
-        .eq("id", user.id)
-        .single();
-      if (error || profile?.role !== "owner") return router.push("/");
-      setOwnerId(profile.id);
-      setProfile(profile); // Save owner profile for later
-    };
-    fetchOwner();
-  }, []);
-
-  // Fetch clients, keys
-  useEffect(() => {
-    if (ownerId) {
-      fetchClients();
-      fetchKeys();
-    }
-  }, [ownerId]);
-
-  // Fetch machines
-  useEffect(() => {
-    fetchMachines();
-  }, []);
-
+  // ---- ALL FUNCTIONS DEFINED FIRST ----
   const fetchClients = async () => {
     const { data } = await supabase.from('clients').select('*').eq('owner_id', ownerId);
     setClients(data || []);
@@ -152,7 +123,7 @@ export default function OwnerPanelPage() {
       clientPhone: client.phone,
       checkIn: client.check_in,
       checkOut: client.check_out,
-      ownerName,                        // NEW!
+      ownerName,
       clientFull: client,
       keyId: key?.uuid,
       keyRoom: key?.room_number,
@@ -204,6 +175,38 @@ export default function OwnerPanelPage() {
     const key = keys.find(k => k.uuid === client.key_id);
     return key ? `${key.room_number} (UID: ${key.UID || key.uuid})` : '';
   };
+
+  // ---- useEffect hooks are now AFTER all functions ----
+
+  // Fetch owner info
+  useEffect(() => {
+    const fetchOwner = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return router.push("/");
+      const { data: profile, error } = await supabase
+        .from("users")
+        .select("id, role, name, email")
+        .eq("id", user.id)
+        .single();
+      if (error || profile?.role !== "owner") return router.push("/");
+      setOwnerId(profile.id);
+      setProfile(profile);
+    };
+    fetchOwner();
+  }, [router]);
+
+  // Fetch clients, keys
+  useEffect(() => {
+    if (ownerId) {
+      fetchClients();
+      fetchKeys();
+    }
+  }, [ownerId]);
+
+  // Fetch machines
+  useEffect(() => {
+    fetchMachines();
+  }, []);
 
   if (!ownerId) return <div className="p-10 text-center text-gray-500">Loading owner data...</div>;
 
