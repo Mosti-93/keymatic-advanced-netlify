@@ -12,7 +12,8 @@
     "@supabase/supabase-js": "^2.52.1",
     "next": "15.4.2",
     "react": "19.1.0",
-    "react-dom": "19.1.0"
+    "react-dom": "19.1.0",
+    "resend": "^4.7.0"
   },
   "devDependencies": {
     "@babel/cli": "^7.28.0",

@@ -6,17 +6,19 @@ import { supabase } from "@/utils/supabaseClient";
 export default function OwnerPanelPage() {
   const router = useRouter();
   const [ownerId, setOwnerId] = useState(null);
+  const [profile, setProfile] = useState(null); // Store owner profile
   const [form, setForm] = useState({
     firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: ''
   });
   const [clients, setClients] = useState([]);
   const [keys, setKeys] = useState([]);
+  const [machines, setMachines] = useState([]);
   const [filter, setFilter] = useState('current');
   const [message, setMessage] = useState('');
   const [editMode, setEditMode] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
-  // Get owner from login
+  // Fetch owner info
   useEffect(() => {
     const fetchOwner = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -28,11 +30,12 @@ export default function OwnerPanelPage() {
         .single();
       if (error || profile?.role !== "owner") return router.push("/");
       setOwnerId(profile.id);
+      setProfile(profile); // Save owner profile for later
     };
     fetchOwner();
   }, []);
 
-  // Fetch data after ownerId is ready
+  // Fetch clients, keys
   useEffect(() => {
     if (ownerId) {
       fetchClients();
@@ -40,14 +43,24 @@ export default function OwnerPanelPage() {
     }
   }, [ownerId]);
 
+  // Fetch machines
+  useEffect(() => {
+    fetchMachines();
+  }, []);
+
   const fetchClients = async () => {
     const { data } = await supabase.from('clients').select('*').eq('owner_id', ownerId);
     setClients(data || []);
   };
 
   const fetchKeys = async () => {
-    const { data } = await supabase.from('keys').select('uuid, room_number, owner_id, UID').eq('owner_id', ownerId);
+    const { data } = await supabase.from('keys').select('uuid, room_number, owner_id, UID, machine_id').eq('owner_id', ownerId);
     setKeys(data || []);
+  };
+
+  const fetchMachines = async () => {
+    const { data } = await supabase.from('machines').select('id, "Machine name", location');
+    setMachines(data || []);
   };
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
@@ -120,10 +133,62 @@ export default function OwnerPanelPage() {
     }
   };
 
-  // Add Start Pickup handler here
-  const handleStartPickup = (client) => {
-    alert(`Start pickup for ${client.first_name || client.name} (${client.email})`);
+  // --- START PICKUP HANDLER ---
+  const handleStartPickup = async (client) => {
+    const key = keys.find(k => k.uuid === client.key_id);
+    const machineId = key?.machine_id || "";
+    const machine = machines.find(m => Number(m.id) === Number(machineId));
+    const machineName = machine ? machine["Machine name"] : (machineId ? `Machine ${machineId}` : "");
+    const roomNo = key?.room_number || "";
+
+    // Add ownerName from profile
+    const ownerName = profile?.name || "";
+
+    // Build full payload with all data
+    const payload = {
+      clientId: client.id,
+      clientEmail: client.email,
+      clientName: (client.first_name || '') + ' ' + (client.last_name || ''),
+      clientPhone: client.phone,
+      checkIn: client.check_in,
+      checkOut: client.check_out,
+      ownerName,                        // NEW!
+      clientFull: client,
+      keyId: key?.uuid,
+      keyRoom: key?.room_number,
+      keyUID: key?.UID,
+      keyFull: key,
+      machineId: machineId,
+      machineName: machineName,
+      machineLocation: machine?.location,
+      machineFull: machine,
+      roomNo: roomNo,
+    };
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+
+      const res = await fetch('https://vnnqjmsshzbmngnlyvzq.functions.supabase.co/send-pickup-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        alert('Pickup email sent successfully!');
+      } else {
+        alert('Failed to send pickup email: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      alert('Error sending pickup email: ' + err.message);
+    }
   };
+  // --- END START PICKUP HANDLER ---
 
   const filterClients = () => {
     const today = new Date().toISOString().split('T')[0];
@@ -153,6 +218,7 @@ export default function OwnerPanelPage() {
         <div className="bg-white shadow rounded-lg p-6">
           <h2 className="text-xl font-semibold mb-4">{editMode ? 'Edit Client' : 'Add New Client'}</h2>
           <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* ...form fields unchanged... */}
             <div>
               <label className="block text-sm font-medium text-gray-700">First Name</label>
               <input
@@ -196,7 +262,6 @@ export default function OwnerPanelPage() {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
               />
             </div>
-            {/* Key Dropdown */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Room No / Key</label>
               <select
@@ -214,7 +279,6 @@ export default function OwnerPanelPage() {
                 ))}
               </select>
             </div>
-            {/* Check-in/Check-out SIDE BY SIDE */}
             <div className="flex gap-2 col-span-1 md:col-span-2">
               <div className="w-1/2">
                 <label className="block text-sm font-medium text-gray-700">Check-In Date</label>
@@ -237,7 +301,6 @@ export default function OwnerPanelPage() {
                 />
               </div>
             </div>
-            {/* Buttons */}
             <div className="md:col-span-2 flex gap-3">
               <button
                 type="submit"
@@ -283,30 +346,54 @@ export default function OwnerPanelPage() {
             <table className="min-w-full border border-gray-300 rounded-lg">
               <thead className="bg-gray-100">
                 <tr>
-                  {["FIRST NAME", "LAST NAME", "EMAIL", "PHONE", "ROOM / UID", "CHECK-IN", "CHECK-OUT", "ACTIONS"].map((col) => (
-                    <th
-                      key={col}
-                      className={`px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 ${col === "ACTIONS" ? "text-right" : "text-left"}`}
-                    >
-                      {col}
-                    </th>
-                  ))}
-                  {/* Add Start Pickup header */}
-                  <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-right">
+                  <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
                     Start Pickup
+                  </th>
+                  <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
+                    FULL NAME
+                  </th>
+                  <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
+                    ROOM / UID
+                  </th>
+                  <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left w-48">
+                    CHECK-IN
+                  </th>
+                  <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left w-48">
+                    CHECK-OUT
+                  </th>
+                  <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
+                    EMAIL
+                  </th>
+                  <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
+                    PHONE
+                  </th>
+                  <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-right">
+                    ACTIONS
                   </th>
                 </tr>
               </thead>
               <tbody>
                 {filterClients().map((client, index) => (
                   <tr key={index} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 border border-gray-300">{client.first_name}</td>
-                    <td className="px-6 py-4 border border-gray-300">{client.last_name}</td>
+                    {/* Start Pickup button (leftmost cell) */}
+                    <td className="px-6 py-4 border border-gray-300 text-left">
+                      {(['current', 'coming'].includes(filter)) && (
+                        <button
+                          onClick={() => handleStartPickup(client)}
+                          className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md text-white bg-teal-600 hover:bg-teal-700"
+                        >
+                          Start Pickup
+                        </button>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 border border-gray-300">
+                      {(client.first_name || '') + ' ' + (client.last_name || '')}
+                    </td>
+                    <td className="px-6 py-4 border border-gray-300">{getKeyInfo(client)}</td>
+                    <td className="px-6 py-4 border border-gray-300 w-48">{client.check_in}</td>
+                    <td className="px-6 py-4 border border-gray-300 w-48">{client.check_out}</td>
                     <td className="px-6 py-4 border border-gray-300">{client.email}</td>
                     <td className="px-6 py-4 border border-gray-300">{client.phone}</td>
-                    <td className="px-6 py-4 border border-gray-300">{getKeyInfo(client)}</td>
-                    <td className="px-6 py-4 border border-gray-300 w-40">{client.check_in}</td>
-                    <td className="px-6 py-4 border border-gray-300 w-40">{client.check_out}</td>
                     <td className="px-6 py-4 border border-gray-300">
                       <div className="flex flex-row gap-2 justify-end">
                         <button
@@ -322,17 +409,6 @@ export default function OwnerPanelPage() {
                           Delete
                         </button>
                       </div>
-                    </td>
-                    {/* Add Start Pickup button */}
-                    <td className="px-6 py-4 border border-gray-300 text-right">
-                      {(['current', 'coming'].includes(filter)) && (
-                        <button
-                          onClick={() => handleStartPickup(client)}
-                          className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md text-white bg-teal-600 hover:bg-teal-700"
-                        >
-                          Start Pickup
-                        </button>
-                      )}
                     </td>
                   </tr>
                 ))}
