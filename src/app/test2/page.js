@@ -6,8 +6,19 @@ const supabaseUrl = 'https://vnnqjmsshzbmngnlyvzq.supabase.co';
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZubnFqbXNzaHpibW5nbmx5dnpxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEyMzE2ODksImV4cCI6MjA2NjgwNzY4OX0.ATv6RVLhr5Oi3lJ74fMe4WJrUdm-d2gjuID7VDGtAec';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-const cloudBase = 'https://shuttle-uncertainty-sites-meat.trycloudflare.com';
+const cloudBase = 'https://oak-berlin-evidence-strengthening.trycloudflare.com';
 const hmacKey = "mysupersecretkey";
+
+// Helper: Format for <input type="datetime-local"> (YYYY-MM-DDTHH:MM)
+function getLocalDatetimeStr(date) {
+  const pad = n => n.toString().padStart(2, '0');
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate())
+  ].join('-') + 'T' +
+    [pad(date.getHours()), pad(date.getMinutes())].join(':');
+}
 
 export default function TestPage() {
   const [status, setStatus] = useState('');
@@ -21,16 +32,24 @@ export default function TestPage() {
   const [selectedUID, setSelectedUID] = useState('');
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [slotPresence, setSlotPresence] = useState([]);
+  const [start, setStart] = useState('');
+  const [expiry, setExpiry] = useState('');
+
+  // Set default start/expiry only once on mount
+  React.useEffect(() => {
+    const now = new Date();
+    const inOneDay = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    setStart(getLocalDatetimeStr(now));
+    setExpiry(getLocalDatetimeStr(inOneDay));
+  }, []);
 
   const tableCellStyle = { color: "#fff", fontWeight: "bold" };
   const headerStyle = { background: "#fff", fontWeight: "bold", color: "black", fontSize: 17 };
 
-  // Updated parser: captures UID or "NONE"
   function parseEspResponse(espResult) {
     try {
       const json = JSON.parse(espResult);
       if (!json.esp_response) return null;
-      // Accepts anything after the colon, so "NONE" or real UID
       const match = json.esp_response.match(/UID(\d+):(.*)/);
       if (match) {
         return { slot: match[1], uid: match[2] };
@@ -51,18 +70,15 @@ export default function TestPage() {
     const { data, error } = await supabase
       .from('key_slot_presence')
       .select('*')
-      .order('slot_number', { ascending: true }); // use your real column name
+      .order('slot_number', { ascending: true });
     if (!error) setSlotPresence(data || []);
   }
 
-  // Main function: handles both assign and release logic
   async function updateKeySlotPresence(slot, uid) {
     setStatus(`⌛ Updating UID in key_slot_presence (slot ${slot})...`);
-    // 1. If we're assigning a real UID, release it from any other slot first
     if (uid && uid !== 'NONE') {
       await supabase.from('key_slot_presence').update({ UID: null }).eq('UID', uid);
     }
-    // 2. Set UID (null for empty/NONE, or value for present key)
     const newUid = (!uid || uid === 'NONE') ? null : uid;
     const { error } = await supabase
       .from('key_slot_presence')
@@ -130,10 +146,22 @@ export default function TestPage() {
       return;
     }
 
+    // Use the current value of start/expiry fields (already defaulted)
+    if (!start) {
+      setStatus("❌ Please select start date & time!");
+      return;
+    }
+    if (!expiry) {
+      setStatus("❌ Please select expiry date & time!");
+      return;
+    }
+    const startISO = new Date(start).toISOString().slice(0,19);
+    const expISO = new Date(expiry).toISOString().slice(0,19);
+
     const device = 'ESP';
     const cmdType = 'UID';
     const action = '?';
-    const fullCmd = `${device}:${cmdType}${slotId}:${action}|ts=${ts}`;
+    const fullCmd = `${device}:${cmdType}${slotId}:${action}|ts=${ts}|start=${startISO}|exp=${expISO}`;
     setCmdPreview(fullCmd);
 
     const encoder = new TextEncoder();
@@ -242,6 +270,26 @@ export default function TestPage() {
     }}>
       <h2 style={{ color: "#fff" }}>Keymatic Test Page</h2>
 
+      {/* Start/Expiry Inputs */}
+      <div style={{ marginBottom: 10 }}>
+        <label style={{ color: "#fff" }}><b>Start (UTC):</b></label>
+        <input
+          type="datetime-local"
+          value={start}
+          onChange={e => setStart(e.target.value)}
+          style={{ marginLeft: 8, padding: 4, fontSize: 15 }}
+        />
+      </div>
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ color: "#fff" }}><b>Expiry (UTC):</b></label>
+        <input
+          type="datetime-local"
+          value={expiry}
+          onChange={e => setExpiry(e.target.value)}
+          style={{ marginLeft: 8, padding: 4, fontSize: 15 }}
+        />
+      </div>
+
       {/* Dropdown at the top */}
       <div style={{ margin: "0 0 24px 0", color: "#fff" }}>
         <label htmlFor="uid-dropdown"><b>Select key UID:</b></label>
@@ -322,6 +370,8 @@ export default function TestPage() {
             <pre style={{ color: "#fff", fontSize: 15 }}>{sigPreview}</pre>
           </div>
           <div><b>Cloud Timestamp:</b> {timePreview}</div>
+          <div><b>Start UTC:</b> {start && new Date(start).toISOString().slice(0,19)}</div>
+          <div><b>Expiry UTC:</b> {expiry && new Date(expiry).toISOString().slice(0,19)}</div>
           {showSlotUIDFromMachine()}
         </div>
       )}

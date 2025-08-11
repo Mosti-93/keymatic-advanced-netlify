@@ -13,19 +13,101 @@ export default function OwnerPanelPage() {
   const [clients, setClients] = useState([]);
   const [keys, setKeys] = useState([]);
   const [machines, setMachines] = useState([]);
+  const [slotPresence, setSlotPresence] = useState([]); // <-- Added!
   const [filter, setFilter] = useState('current');
   const [message, setMessage] = useState('');
   const [editMode, setEditMode] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [tableFilter, setTableFilter] = useState('');
+  const [sortField, setSortField] = useState('check_in');
+  const [sortDir, setSortDir] = useState('asc');
 
-  // ---- ALL FUNCTIONS DEFINED FIRST ----
+  // Fetch slot_presence table
+  const fetchSlotPresence = async () => {
+    const { data } = await supabase
+      .from('key_slot_presence')
+      .select('machine_id, slot_number, UID');
+    setSlotPresence(data || []);
+  };
+
+  async function handleStartPickup(client) {
+  setMessage("⏳ Starting pickup...");
+
+  // Resolve first/last even if only client.name exists
+  const parsedFirst =
+    client.first_name ||
+    (client.name ? client.name.trim().split(' ')[0] : '') ||
+    '';
+  const parsedLast =
+    client.last_name ||
+    (client.name ? client.name.trim().split(' ').slice(1).join(' ') : '') ||
+    '';
+
+  const key = keys.find(k => k.uuid === client.key_id);
+  const machineId = key?.machine_id || "";
+  const roomNo = key?.room_number || "";
+  const UID = key?.UID || "";
+
+  // Fallback for slot_number using slotPresence table
+  let slot_number = key?.slot_number;
+  if (!slot_number && key?.UID && key?.machine_id) {
+    const slot = slotPresence.find(
+      sp => sp.UID === key.UID && String(sp.machine_id) === String(key.machine_id)
+    );
+    slot_number = slot?.slot_number || "";
+  }
+
+  if (!UID || !slot_number) {
+    setMessage("❌ Key data missing: UID or slot number not found for the selected key.");
+    return;
+  }
+
+  try {
+    const res = await fetch("/api/pickup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        clientId: client.id,
+        clientEmail: client.email || "",
+        // >>> send names explicitly <<<
+        clientFirstName: parsedFirst,
+        clientLastName: parsedLast,
+        clientName: `${parsedFirst} ${parsedLast}`.trim(),
+
+        keyId: client.key_id,
+        machineId,
+        roomNo,
+        checkIn: client.check_in,
+        checkOut: client.check_out,
+        UID,
+        slot_number,
+      }),
+    });
+
+    const data = await res.json();
+    if (data.success) setMessage("✅ Pickup email sent!");
+    else setMessage("❌ Failed: " + (data.error || "Unknown error."));
+  } catch (e) {
+    setMessage("❌ Pickup error: " + e.message);
+  }
+}
+
+
+  function toDateTimeLocal(val) {
+    if (!val) return '';
+    return val.replace(' ', 'T').slice(0, 16);
+  }
+
   const fetchClients = async () => {
     const { data } = await supabase.from('clients').select('*').eq('owner_id', ownerId);
     setClients(data || []);
   };
 
   const fetchKeys = async () => {
-    const { data } = await supabase.from('keys').select('uuid, room_number, owner_id, UID, machine_id').eq('owner_id', ownerId);
+    const { data } = await supabase
+      .from('keys')
+      .select('uuid, room_number, owner_id, UID, machine_id, slot_number')
+      .eq('owner_id', ownerId);
     setKeys(data || []);
   };
 
@@ -34,7 +116,21 @@ export default function OwnerPanelPage() {
     setMachines(data || []);
   };
 
-  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    if (name === "checkOut" && value) {
+      const hasTime = value.includes("T");
+      setForm((prev) => ({
+        ...prev,
+        [name]: hasTime ? value : `${value}T11:00:00`
+      }));
+    } else {
+      setForm((prev) => ({
+        ...prev,
+        [name]: value
+      }));
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -104,81 +200,74 @@ export default function OwnerPanelPage() {
     }
   };
 
-  // --- START PICKUP HANDLER ---
-  const handleStartPickup = async (client) => {
-    const key = keys.find(k => k.uuid === client.key_id);
-    const machineId = key?.machine_id || "";
-    const machine = machines.find(m => Number(m.id) === Number(machineId));
-    const machineName = machine ? machine["Machine name"] : (machineId ? `Machine ${machineId}` : "");
-    const roomNo = key?.room_number || "";
-
-    // Add ownerName from profile
-    const ownerName = profile?.name || "";
-
-    // Build full payload with all data
-    const payload = {
-      clientId: client.id,
-      clientEmail: client.email,
-      clientName: (client.first_name || '') + ' ' + (client.last_name || ''),
-      clientPhone: client.phone,
-      checkIn: client.check_in,
-      checkOut: client.check_out,
-      ownerName,
-      clientFull: client,
-      keyId: key?.uuid,
-      keyRoom: key?.room_number,
-      keyUID: key?.UID,
-      keyFull: key,
-      machineId: machineId,
-      machineName: machineName,
-      machineLocation: machine?.location,
-      machineFull: machine,
-      roomNo: roomNo,
-    };
-
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const accessToken = session?.access_token;
-
-      const res = await fetch('https://vnnqjmsshzbmngnlyvzq.functions.supabase.co/send-pickup-email', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json();
-      if (data.success) {
-        alert('Pickup email sent successfully!');
-      } else {
-        alert('Failed to send pickup email: ' + (data.error || 'Unknown error'));
-      }
-    } catch (err) {
-      alert('Error sending pickup email: ' + err.message);
-    }
-  };
-  // --- END START PICKUP HANDLER ---
-
-  const filterClients = () => {
-    const today = new Date().toISOString().split('T')[0];
-    return clients.filter(client => {
-      if (filter === 'current') return client.check_in <= today && client.check_out >= today;
-      if (filter === 'coming') return client.check_in > today;
-      if (filter === 'past') return client.check_out < today;
-      return true;
-    });
-  };
+  function displayDateTime(val) {
+    if (!val) return <span className="text-gray-400">-</span>;
+    const dt = val.replace(' ', 'T');
+    const [date, timePart] = dt.split('T');
+    const time = (timePart || '').slice(0,5);
+    return (
+      <span>
+        <span>{date}</span>
+        <br />
+        <span className="text-xs text-gray-500">{time}</span>
+      </span>
+    );
+  }
 
   const getKeyInfo = (client) => {
     const key = keys.find(k => k.uuid === client.key_id);
     return key ? `${key.room_number} (UID: ${key.UID || key.uuid})` : '';
   };
 
-  // ---- useEffect hooks are now AFTER all functions ----
+  const sorters = {
+    check_in: client => client.check_in || '',
+    check_out: client => client.check_out || '',
+    full_name: client => ((client.first_name || '') + ' ' + (client.last_name || '')).toLowerCase(),
+    key_info: client => getKeyInfo(client).toLowerCase(),
+    email: client => (client.email || '').toLowerCase(),
+    phone: client => (client.phone || '').toLowerCase()
+  };
 
-  // Fetch owner info
+  const filterClients = () => {
+    const today = new Date().toISOString().split('T')[0];
+    let filtered = clients.filter(client => {
+      const ci = (client.check_in || '').slice(0, 10);
+      const co = (client.check_out || '').slice(0, 10);
+      if (filter === 'current') return ci <= today && co >= today;
+      if (filter === 'coming') return ci > today;
+      if (filter === 'past') return co < today;
+      return true;
+    });
+
+    if (tableFilter.trim()) {
+      const f = tableFilter.trim().toLowerCase();
+      filtered = filtered.filter(client =>
+        (client.first_name || '').toLowerCase().includes(f) ||
+        (client.last_name || '').toLowerCase().includes(f) ||
+        (client.email || '').toLowerCase().includes(f) ||
+        (client.phone || '').toLowerCase().includes(f) ||
+        (client.check_in || '').toLowerCase().includes(f) ||
+        (client.check_out || '').toLowerCase().includes(f) ||
+        getKeyInfo(client).toLowerCase().includes(f)
+      );
+    }
+    if (sortField && sorters[sortField]) {
+      filtered.sort((a, b) => {
+        let va = sorters[sortField](a);
+        let vb = sorters[sortField](b);
+        if (va < vb) return sortDir === 'asc' ? -1 : 1;
+        if (va > vb) return sortDir === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+    return filtered;
+  };
+
+  const handleSort = (field) => {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortDir('asc'); }
+  };
+
   useEffect(() => {
     const fetchOwner = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -195,7 +284,6 @@ export default function OwnerPanelPage() {
     fetchOwner();
   }, [router]);
 
-  // Fetch clients, keys
   useEffect(() => {
     if (ownerId) {
       fetchClients();
@@ -203,13 +291,24 @@ export default function OwnerPanelPage() {
     }
   }, [ownerId]);
 
-  // Fetch machines
   useEffect(() => {
     fetchMachines();
+    fetchSlotPresence(); // <-- New!
+  }, []);
+
+  useEffect(() => {
+    if (!form.checkIn) {
+      const now = new Date();
+      now.setHours(10, 0, 0, 0);
+      const pad = (n) => String(n).padStart(2, '0');
+      const defaultStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T10:00`;
+      setForm(f => ({ ...f, checkIn: defaultStr }));
+    }
   }, []);
 
   if (!ownerId) return <div className="p-10 text-center text-gray-500">Loading owner data...</div>;
 
+  // --- JSX STARTS HERE ---
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800">
       <header className="bg-white shadow">
@@ -221,7 +320,6 @@ export default function OwnerPanelPage() {
         <div className="bg-white shadow rounded-lg p-6">
           <h2 className="text-xl font-semibold mb-4">{editMode ? 'Edit Client' : 'Add New Client'}</h2>
           <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* ...form fields unchanged... */}
             <div>
               <label className="block text-sm font-medium text-gray-700">First Name</label>
               <input
@@ -284,11 +382,11 @@ export default function OwnerPanelPage() {
             </div>
             <div className="flex gap-2 col-span-1 md:col-span-2">
               <div className="w-1/2">
-                <label className="block text-sm font-medium text-gray-700">Check-In Date</label>
+                <label className="block text-sm font-medium text-gray-700">Check-In Date & Time</label>
                 <input
-                  type="date"
+                  type="datetime-local"
                   name="checkIn"
-                  value={form.checkIn}
+                  value={toDateTimeLocal(form.checkIn)}
                   onChange={handleChange}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
                 />
@@ -298,7 +396,7 @@ export default function OwnerPanelPage() {
                 <input
                   type="date"
                   name="checkOut"
-                  value={form.checkOut}
+                  value={form.checkOut ? form.checkOut.slice(0, 10) : ""}
                   onChange={handleChange}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
                 />
@@ -345,6 +443,15 @@ export default function OwnerPanelPage() {
               ))}
             </div>
           </div>
+          <div className="my-2">
+            <input
+              type="text"
+              value={tableFilter}
+              onChange={e => setTableFilter(e.target.value)}
+              placeholder="Search by name, room, email, UID, etc"
+              className="p-2 border rounded-md w-64"
+            />
+          </div>
           <div className="overflow-x-auto">
             <table className="min-w-full border border-gray-300 rounded-lg">
               <thead className="bg-gray-100">
@@ -352,23 +459,41 @@ export default function OwnerPanelPage() {
                   <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
                     Start Pickup
                   </th>
-                  <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
-                    FULL NAME
+                  <th
+                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
+                    onClick={() => handleSort('full_name')}
+                  >
+                    FULL NAME {sortField === 'full_name' && (sortDir === 'asc' ? '▲' : '▼')}
                   </th>
-                  <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
-                    ROOM / UID
+                  <th
+                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
+                    onClick={() => handleSort('key_info')}
+                  >
+                    ROOM / UID {sortField === 'key_info' && (sortDir === 'asc' ? '▲' : '▼')}
                   </th>
-                  <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left w-48">
-                    CHECK-IN
+                  <th
+                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left w-48 cursor-pointer"
+                    onClick={() => handleSort('check_in')}
+                  >
+                    CHECK-IN {sortField === 'check_in' && (sortDir === 'asc' ? '▲' : '▼')}
                   </th>
-                  <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left w-48">
-                    CHECK-OUT
+                  <th
+                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left w-48 cursor-pointer"
+                    onClick={() => handleSort('check_out')}
+                  >
+                    CHECK-OUT {sortField === 'check_out' && (sortDir === 'asc' ? '▲' : '▼')}
                   </th>
-                  <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
-                    EMAIL
+                  <th
+                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
+                    onClick={() => handleSort('email')}
+                  >
+                    EMAIL {sortField === 'email' && (sortDir === 'asc' ? '▲' : '▼')}
                   </th>
-                  <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
-                    PHONE
+                  <th
+                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
+                    onClick={() => handleSort('phone')}
+                  >
+                    PHONE {sortField === 'phone' && (sortDir === 'asc' ? '▲' : '▼')}
                   </th>
                   <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-right">
                     ACTIONS
@@ -378,7 +503,6 @@ export default function OwnerPanelPage() {
               <tbody>
                 {filterClients().map((client, index) => (
                   <tr key={index} className="hover:bg-gray-50">
-                    {/* Start Pickup button (leftmost cell) */}
                     <td className="px-6 py-4 border border-gray-300 text-left">
                       {(['current', 'coming'].includes(filter)) && (
                         <button
@@ -393,8 +517,8 @@ export default function OwnerPanelPage() {
                       {(client.first_name || '') + ' ' + (client.last_name || '')}
                     </td>
                     <td className="px-6 py-4 border border-gray-300">{getKeyInfo(client)}</td>
-                    <td className="px-6 py-4 border border-gray-300 w-48">{client.check_in}</td>
-                    <td className="px-6 py-4 border border-gray-300 w-48">{client.check_out}</td>
+                    <td className="px-6 py-4 border border-gray-300 w-48">{displayDateTime(client.check_in)}</td>
+                    <td className="px-6 py-4 border border-gray-300 w-48">{displayDateTime(client.check_out)}</td>
                     <td className="px-6 py-4 border border-gray-300">{client.email}</td>
                     <td className="px-6 py-4 border border-gray-300">{client.phone}</td>
                     <td className="px-6 py-4 border border-gray-300">
@@ -415,6 +539,13 @@ export default function OwnerPanelPage() {
                     </td>
                   </tr>
                 ))}
+                {filterClients().length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="text-center text-gray-400 py-4">
+                      No clients found.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

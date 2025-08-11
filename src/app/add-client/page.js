@@ -16,11 +16,16 @@ export default function AddClientPage() {
   const [message, setMessage] = useState('');
   const [editMode, setEditMode] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [tableFilter, setTableFilter] = useState('');
+  const [sortField, setSortField] = useState('check_in');
+  const [sortDir, setSortDir] = useState('asc');
+  const [slotPresence, setSlotPresence] = useState([]); // NEW
 
   useEffect(() => {
     fetchClients();
     fetchKeys();
     fetchOwners();
+    fetchSlotPresence(); // NEW
   }, []);
 
   const fetchClients = async () => {
@@ -28,18 +33,42 @@ export default function AddClientPage() {
     if (!error) setClients(data);
   };
 
+  // includes slot_number now
   const fetchKeys = async () => {
-    const { data, error } = await supabase.from('keys').select('uuid, room_number, owner_id, UID');
+    const { data, error } = await supabase
+      .from('keys')
+      .select('uuid, room_number, owner_id, UID, machine_id, slot_number');
     if (!error) setKeys(data || []);
   };
 
   const fetchOwners = async () => {
-    const { data, error } = await supabase.from('users').select('id, name, email, phone').eq('role', 'owner');
+    const { data, error } = await supabase.from('users')
+      .select('id, name, email, phone')
+      .eq('role', 'owner');
     if (!error) setOwners(data || []);
   };
 
+  const fetchSlotPresence = async () => { // NEW
+    const { data } = await supabase
+      .from('key_slot_presence')
+      .select('machine_id, slot_number, UID');
+    setSlotPresence(data || []);
+  };
+
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    if (name === "checkOut" && value) {
+      const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+      setForm((prev) => ({
+        ...prev,
+        [name]: isDateOnly ? `${value}T11:00:00` : value,
+      }));
+    } else {
+      setForm((prev) => ({
+        ...prev,
+        [name]: value,
+      }));
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -127,49 +156,102 @@ export default function AddClientPage() {
     }
   };
 
-  // 👇 Add this function for Start Pickup
-  const handleStartPickup = (client) => {
-    alert(`Start pickup for ${client.first_name || client.name} (${client.email})`);
+  const handleStartPickup = async (client) => {
+    // Resolve first/last even if only client.name exists
+    const parsedFirst =
+      client.first_name ||
+      (client.name ? client.name.trim().split(' ')[0] : '') ||
+      '';
+    const parsedLast =
+      client.last_name ||
+      (client.name ? client.name.trim().split(' ').slice(1).join(' ') : '') ||
+      '';
+
+    const key = keys.find(k => k.uuid === client.key_id);
+
+    if (!key?.UID) {
+      setMessage("❌ Key has no UID assigned!");
+      return;
+    }
+
+    // Real-time presence check
+    const { data: slot } = await supabase
+      .from('key_slot_presence')
+      .select('*')
+      .eq('UID', key.UID)
+      .maybeSingle();
+
+    if (!slot) {
+      setMessage("❌ The key is NOT in the machine right now. Please check bookings or missing key.");
+      return;
+    }
+
+    // Prefer presence slot -> key.slot_number -> cached presence
+    let slot_number = slot?.slot_number || key?.slot_number;
+    if (!slot_number && key?.UID && key?.machine_id) {
+      const spSlot = slotPresence.find(
+        sp => sp.UID === key.UID && String(sp.machine_id) === String(key.machine_id)
+      );
+      slot_number = spSlot?.slot_number || "";
+    }
+
+    if (!slot_number) {
+      setMessage("❌ Key data missing: slot number not found for the selected key.");
+      return;
+    }
+
+    setMessage("⏳ Starting pickup...");
+
+    const roomNo = key.room_number || "";
+    const UID = key.UID || "";
+    const machineId = key.machine_id || "";
+    const owner = owners.find(o => o.id === key?.owner_id) || {};
+    const ownerName = owner.name || "";
+
+    // >>> Send explicit first/last so backend can store them <<<
+    const pickupPayload = {
+      clientId: client.id,
+      clientEmail: client.email || "",
+      clientFirstName: parsedFirst,                           // NEW
+      clientLastName: parsedLast,                             // NEW
+      clientName: `${parsedFirst} ${parsedLast}`.trim(),      // (still send full name)
+      ownerName,
+      keyId: client.key_id,
+      roomNo,
+      UID,
+      slot_number,
+      checkIn: client.check_in,
+      checkOut: client.check_out,
+      machineId,
+    };
+
+    try {
+      const res = await fetch("/api/pickup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pickupPayload),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setMessage("✅ Pickup started and email sent!");
+      } else {
+        setMessage("❌ Failed: " + (data.error || "Unknown error."));
+      }
+    } catch (e) {
+      setMessage("❌ Pickup error: " + e.message);
+    }
   };
 
-  const filterClients = () => {
-    const today = new Date().toISOString().split('T')[0];
-    return clients.filter(client => {
-      if (filter === 'current') return client.check_in <= today && client.check_out >= today;
-      if (filter === 'coming') return client.check_in > today;
-      if (filter === 'past') return client.check_out < today;
-      return true;
-    });
+  // --------------------------------------------------------
+
+  // Helper: get key info for a client
+  const getKeyInfo = (client) => {
+    const key = keys.find(k => k.uuid === client.key_id);
+    return key ? `${key.room_number || ''} (UID: ${key.UID || key.uuid})` : '';
   };
 
-  const handleOwnerSearch = (e) => {
-  const value = e.target.value;
-  setOwnerSearch(value);
-  setSelectedOwner(null);
-  setForm(prev => ({ ...prev, keyId: '' }));
-  if (value.length < 2) {
-    setFilteredOwners([]);
-    return;
-  }
-  const matches = owners.filter(owner =>
-    (owner.name && owner.name.toLowerCase().includes(value.trim().toLowerCase())) ||
-    (owner.email && owner.email.toLowerCase().includes(value.trim().toLowerCase()))
-  );
-  setFilteredOwners(matches || []);
-};
-
-
-  const handleOwnerSelect = (owner) => {
-    setSelectedOwner(owner);
-    setOwnerSearch(owner.email);
-    setFilteredOwners([]);
-    setForm(prev => ({ ...prev, keyId: '' }));
-  };
-
-  const ownerKeys = selectedOwner
-    ? keys.filter(k => k.owner_id === selectedOwner.id)
-    : keys;
-
+  // Filtering and sorting clients list
   function getFirstName(client) {
     if (client.first_name) return client.first_name;
     if (client.name) return client.name.split(' ')[0];
@@ -180,11 +262,93 @@ export default function AddClientPage() {
     if (client.name) return client.name.split(' ').slice(1).join(' ');
     return '';
   }
-  function getKeyInfo(client) {
-    const key = keys.find(k => k.uuid === client.key_id);
-    return key
-      ? `${key.room_number || ''} (UID: ${key.UID || key.uuid})`
-      : '';
+
+  const filterClients = () => {
+    const today = new Date().toISOString().slice(0,10);
+    let filtered = clients.filter(client => {
+      if (filter === 'current') return client.check_in <= today && client.check_out >= today;
+      if (filter === 'coming') return client.check_in > today;
+      if (filter === 'past') return client.check_out < today;
+      return true;
+    });
+
+    if (tableFilter.trim()) {
+      const f = tableFilter.trim().toLowerCase();
+      filtered = filtered.filter(client =>
+        (client.first_name || '').toLowerCase().includes(f) ||
+        (client.last_name || '').toLowerCase().includes(f) ||
+        (client.email || '').toLowerCase().includes(f) ||
+        (client.phone || '').toLowerCase().includes(f) ||
+        (client.check_in || '').toLowerCase().includes(f) ||
+        (client.check_out || '').toLowerCase().includes(f) ||
+        getKeyInfo(client).toLowerCase().includes(f)
+      );
+    }
+
+    const sorters = {
+      check_in: client => client.check_in || '',
+      check_out: client => client.check_out || '',
+      full_name: client => ((client.first_name || '') + ' ' + (client.last_name || '')).toLowerCase(),
+      key_info: client => getKeyInfo(client).toLowerCase(),
+      email: client => (client.email || '').toLowerCase(),
+      phone: client => (client.phone || '').toLowerCase()
+    };
+
+    if (sortField && sorters[sortField]) {
+      filtered.sort((a,b) => {
+        let va = sorters[sortField](a);
+        let vb = sorters[sortField](b);
+        if (va < vb) return sortDir === 'asc' ? -1 : 1;
+        if (va > vb) return sortDir === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return filtered;
+  };
+
+  const handleSort = (field) => {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortDir('asc'); }
+  };
+
+  // Owner search handlers (unchanged)
+  const handleOwnerSearch = (e) => {
+    const value = e.target.value;
+    setOwnerSearch(value);
+    setSelectedOwner(null);
+    setForm(prev => ({ ...prev, keyId: '' }));
+    if (value.length < 2) {
+      setFilteredOwners([]);
+      return;
+    }
+    const matches = owners.filter(owner =>
+      (owner.name && owner.name.toLowerCase().includes(value.trim().toLowerCase())) ||
+      (owner.email && owner.email.toLowerCase().includes(value.trim().toLowerCase()))
+    );
+    setFilteredOwners(matches || []);
+  };
+
+  const handleOwnerSelect = (owner) => {
+    setSelectedOwner(owner);
+    setOwnerSearch(owner.email);
+    setFilteredOwners([]);
+    setForm(prev => ({ ...prev, keyId: '' }));
+  };
+
+  // Helper for date/time display in the table
+  function displayDateTime(val) {
+    if (!val) return <span className="text-gray-400">-</span>;
+    const dt = val.replace(' ', 'T');
+    const [date, timePart] = dt.split('T');
+    const time = (timePart || '').slice(0,5); // HH:MM
+    return (
+      <span>
+        <span>{date}</span>
+        <br />
+        <span className="text-xs text-gray-500">{time}</span>
+      </span>
+    );
   }
 
   return (
@@ -246,7 +410,6 @@ export default function AddClientPage() {
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
               />
             </div>
-
             {/* Owner Search */}
             <div className="md:col-span-2 relative">
               <label className="block text-sm font-medium text-gray-700">Link to Owner (Search by Email or Name)</label>
@@ -280,7 +443,6 @@ export default function AddClientPage() {
                 </div>
               )}
             </div>
-
             {/* Key Dropdown */}
             <div>
               <label className="block text-sm font-medium text-gray-700">Room No / Key</label>
@@ -293,19 +455,26 @@ export default function AddClientPage() {
                 required
               >
                 <option value="">Select key for owner</option>
-                {ownerKeys.map((k) => (
-                  <option key={k.uuid} value={k.uuid}>
-                    {k.room_number} (UID: {k.UID || k.uuid})
-                  </option>
-                ))}
+                {selectedOwner
+                  ? keys.filter(k => k.owner_id === selectedOwner.id).map((k) => (
+                      <option key={k.uuid} value={k.uuid}>
+                        {k.room_number} (UID: {k.UID || k.uuid})
+                      </option>
+                    ))
+                  : keys.map((k) => (
+                      <option key={k.uuid} value={k.uuid}>
+                        {k.room_number} (UID: {k.UID || k.uuid})
+                      </option>
+                    ))
+                }
               </select>
             </div>
             {/* Check-in/Check-out SIDE BY SIDE */}
             <div className="flex gap-2 col-span-1 md:col-span-2">
               <div className="w-1/2">
-                <label className="block text-sm font-medium text-gray-700">Check-In Date</label>
+                <label className="block text-sm font-medium text-gray-700">Check-In Date & Time</label>
                 <input
-                  type="date"
+                  type="datetime-local"
                   name="checkIn"
                   value={form.checkIn}
                   onChange={handleChange}
@@ -317,13 +486,12 @@ export default function AddClientPage() {
                 <input
                   type="date"
                   name="checkOut"
-                  value={form.checkOut}
+                  value={form.checkOut ? form.checkOut.slice(0, 10) : ""}
                   onChange={handleChange}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
                 />
               </div>
             </div>
-
             {/* Buttons */}
             <div className="md:col-span-2 flex gap-3">
               <button
@@ -349,7 +517,17 @@ export default function AddClientPage() {
                 </button>
               )}
             </div>
-            {message && <p className="mt-4 text-center text-sm col-span-2">{message}</p>}
+            {message && (
+              <p
+                className={`mt-4 text-center text-sm col-span-2 ${
+                  message.startsWith("❌")
+                    ? "font-bold text-red-600"
+                    : "text-green-700"
+                }`}
+              >
+                {message}
+              </p>
+            )}
           </form>
         </div>
 
@@ -369,33 +547,96 @@ export default function AddClientPage() {
               ))}
             </div>
           </div>
+
+          <div className="my-2">
+            <input
+              type="text"
+              value={tableFilter}
+              onChange={e => setTableFilter(e.target.value)}
+              placeholder="Search by name, room, email, UID, etc"
+              className="p-2 border rounded-md w-64"
+            />
+          </div>
+
           <div className="overflow-x-auto">
             <table className="min-w-full border border-gray-300 rounded-lg">
               <thead className="bg-gray-100">
                 <tr>
-                  {["FIRST NAME", "LAST NAME", "EMAIL", "PHONE", "ROOM / UID", "CHECK-IN", "CHECK-OUT", "ACTIONS"].map((col) => (
-                    <th
-                      key={col}
-                      className={`px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 ${col === "ACTIONS" ? "text-right" : "text-left"}`}
-                    >
-                      {col}
-                    </th>
-                  ))}
+                  <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
+                    START PICKUP
+                  </th>
+                  <th
+                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
+                    onClick={() => handleSort('full_name')}
+                  >
+                    FULL NAME {sortField === 'full_name' && (sortDir === 'asc' ? '▲' : '▼')}
+                  </th>
+                  <th
+                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
+                    onClick={() => handleSort('key_info')}
+                  >
+                    ROOM / UID {sortField === 'key_info' && (sortDir === 'asc' ? '▲' : '▼')}
+                  </th>
+                  <th
+                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left w-48 cursor-pointer"
+                    onClick={() => handleSort('check_in')}
+                  >
+                    CHECK-IN {sortField === 'check_in' && (sortDir === 'asc' ? '▲' : '▼')}
+                  </th>
+                  <th
+                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left w-48 cursor-pointer"
+                    onClick={() => handleSort('check_out')}
+                  >
+                    CHECK-OUT {sortField === 'check_out' && (sortDir === 'asc' ? '▲' : '▼')}
+                  </th>
+                  <th
+                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
+                    onClick={() => handleSort('email')}
+                  >
+                    EMAIL {sortField === 'email' && (sortDir === 'asc' ? '▲' : '▼')}
+                  </th>
+                  <th
+                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
+                    onClick={() => handleSort('phone')}
+                  >
+                    PHONE {sortField === 'phone' && (sortDir === 'asc' ? '▲' : '▼')}
+                  </th>
                   <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-right">
-                    Start Pickup
+                    ACTIONS
                   </th>
                 </tr>
               </thead>
               <tbody>
                 {filterClients().map((client, index) => (
                   <tr key={index} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 border border-gray-300">{getFirstName(client)}</td>
-                    <td className="px-6 py-4 border border-gray-300">{getLastName(client)}</td>
-                    <td className="px-6 py-4 border border-gray-300">{client.email}</td>
-                    <td className="px-6 py-4 border border-gray-300">{client.phone}</td>
+                    <td className="px-6 py-4 border border-gray-300 text-left">
+                      {(['current', 'coming'].includes(filter)) && (
+                        <button
+                          onClick={() => handleStartPickup(client)}
+                          className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md text-white bg-teal-600 hover:bg-teal-700"
+                        >
+                          Start Pickup
+                        </button>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 border border-gray-300">
+                      {(client.first_name || '') + ' ' + (client.last_name || '')}
+                    </td>
                     <td className="px-6 py-4 border border-gray-300">{getKeyInfo(client)}</td>
-                    <td className="px-6 py-4 border border-gray-300 w-40">{client.check_in}</td>
-                    <td className="px-6 py-4 border border-gray-300 w-40">{client.check_out}</td>
+                    <td className="px-6 py-4 border border-gray-300 w-48">
+                      <div>
+                        {client.check_in?.slice(0, 10)}
+                        <div className="text-xs text-gray-500">{client.check_in?.slice(11, 16)}</div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 border border-gray-300 w-48">
+                      <div>
+                        {client.check_out?.slice(0, 10)}
+                        <div className="text-xs text-gray-500">{client.check_out?.slice(11, 16)}</div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-3 border border-gray-300">{client.email}</td>
+                    <td className="px-6 py-4 border border-gray-300">{client.phone}</td>
                     <td className="px-6 py-4 border border-gray-300">
                       <div className="flex flex-row gap-2 justify-end">
                         <button
@@ -412,18 +653,15 @@ export default function AddClientPage() {
                         </button>
                       </div>
                     </td>
-                    <td className="px-6 py-4 border border-gray-300 text-right">
-                      {(['current', 'coming'].includes(filter)) && (
-                        <button
-                          onClick={() => handleStartPickup(client)}
-                          className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md text-white bg-teal-600 hover:bg-teal-700"
-                        >
-                          Start Pickup
-                        </button>
-                      )}
-                    </td>
                   </tr>
                 ))}
+                {filterClients().length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="text-center text-gray-400 py-4">
+                      No clients found.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

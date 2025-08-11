@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/utils/supabaseClient";
 
 export default function CreateKeyPage() {
@@ -7,7 +7,7 @@ export default function CreateKeyPage() {
     key_id: '',
     UID: '',
     room_number: '',
-    machine_id: '',
+    machine_id: '',   // keep as string; DB uses text like "A01"
     owner_id: ''
   });
   const [loading, setLoading] = useState(false);
@@ -28,32 +28,55 @@ export default function CreateKeyPage() {
   const fetchAll = async () => {
     const [keysRes, machinesRes, ownersRes] = await Promise.all([
       supabase.from('keys').select('*'),
-      supabase.from('machines').select('id, machine_id, "Machine name"'),
+      // NOTE: can't alias a quoted column in select -> fetch raw then normalize in JS
+      supabase.from('machines').select('machine_id, "Machine name"'),
       supabase.from('users').select('id, name, email, phone').eq('role', 'owner')
     ]);
 
     if (!keysRes.error) setKeys(keysRes.data || []);
-    if (!machinesRes.error) setMachines(machinesRes.data || []);
+
+    if (!machinesRes.error) {
+      const normalized = (machinesRes.data || []).map(m => ({
+        ...m,
+        machine_name: m["Machine name"],  // normalize once
+      }));
+      setMachines(normalized);
+    }
+
     if (!ownersRes.error) setOwners(ownersRes.data || []);
   };
 
   const handleChange = (e) => {
-    setForm({ ...form, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    if (name === 'machine_id') {
+      setForm(prev => ({ ...prev, machine_id: value })); // string or ''
+      return;
+    }
+    setForm(prev => ({ ...prev, [name]: value }));
   };
 
-  // Owner search logic (like Add Client)
+  // Fast lookup tolerant to string/number mismatch
+  const machinesById = useMemo(
+    () => new Map(machines.map(m => [String(m.machine_id), m])),
+    [machines]
+  );
+  const getMachine = (machine_id) => machinesById.get(String(machine_id));
+  const getOwner = (id) => owners.find(o => o.id === id);
+
+  // Owner search logic
   const handleOwnerSearch = (e) => {
     const value = e.target.value;
     setOwnerSearch(value);
     setSelectedOwner(null);
     setForm(prev => ({ ...prev, owner_id: '' }));
-    if (value.length < 2) {
+    if (value.trim().length < 2) {
       setFilteredOwners([]);
       return;
     }
+    const q = value.trim().toLowerCase();
     const matches = owners.filter(owner =>
-      (owner.name && owner.name.toLowerCase().includes(value.trim().toLowerCase())) ||
-      (owner.email && owner.email.toLowerCase().includes(value.trim().toLowerCase()))
+      (owner.name && owner.name.toLowerCase().includes(q)) ||
+      (owner.email && owner.email.toLowerCase().includes(q))
     );
     setFilteredOwners(matches || []);
   };
@@ -72,16 +95,20 @@ export default function CreateKeyPage() {
 
     const { key_id, UID } = form;
     if (!key_id || !UID) {
-      setMessage('⚠️ key_id and UID are required.');
+      setMessage('key_id and UID are required.');
       setLoading(false);
       return;
     }
+
+    // Keep machine_id as string (or null)
+    const machineIdValue =
+      form.machine_id === '' || form.machine_id == null ? null : String(form.machine_id);
 
     const payload = {
       key_id,
       UID,
       room_number: form.room_number || null,
-      machine_id: form.machine_id || null,
+      machine_id: machineIdValue,
       owner_id: form.owner_id || null,
     };
 
@@ -90,10 +117,10 @@ export default function CreateKeyPage() {
       : await supabase.from('keys').insert([payload]);
 
     if (response.error) {
-      console.error('Insert Error:', response.error);
-      setMessage(`❌ Failed to save key: ${response.error.message}`);
+      console.error('Insert/Update Error:', response.error);
+      setMessage(`Failed to save key: ${response.error.message}`);
     } else {
-      setMessage(editMode ? '✅ Key updated.' : '✅ Key saved.');
+      setMessage(editMode ? 'Key updated.' : 'Key saved.');
       setForm({ key_id: '', UID: '', room_number: '', machine_id: '', owner_id: '' });
       setSelectedOwner(null);
       setOwnerSearch('');
@@ -111,33 +138,30 @@ export default function CreateKeyPage() {
       key_id: key.key_id,
       UID: key.UID,
       room_number: key.room_number || '',
-      machine_id: key.machine_id || '',
-      owner_id: key.owner_id || ''
+      machine_id: key.machine_id == null ? '' : String(key.machine_id), // string for <select>
+      owner_id: key.owner_id ?? ''
     });
     setSelectedOwner(ownerObj);
     setOwnerSearch(ownerObj ? (ownerObj.name + (ownerObj.email ? ` (${ownerObj.email})` : '')) : '');
     setEditMode(true);
     setEditingKeyId(key.id);
-    setMessage(`✏️ Editing Key: ${key.key_id}`);
+    setMessage(`Editing Key: ${key.key_id}`);
   };
 
   const handleDelete = async (id) => {
     if (!confirm('Are you sure you want to delete this key?')) return;
     const { error } = await supabase.from('keys').delete().eq('id', id);
     if (!error) {
-      setMessage('✅ Key deleted.');
+      setMessage('Key deleted.');
       fetchAll();
     }
   };
-
-  const getMachine = (id) => machines.find(m => m.id === id);
-  const getOwner = (id) => owners.find(o => o.id === id);
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-800">
       <header className="bg-white shadow">
         <div className="max-w-7xl mx-auto py-6 px-4">
-          <h1 className="text-3xl font-bold">🔑 Manage Keys</h1>
+          <h1 className="text-3xl font-bold">Manage Keys</h1>
         </div>
       </header>
       <main className="max-w-7xl mx-auto py-10 px-4 space-y-8">
@@ -166,13 +190,15 @@ export default function CreateKeyPage() {
               <label className="block text-sm font-medium">Machine (optional)</label>
               <select
                 name="machine_id"
-                value={form.machine_id}
+                value={form.machine_id === null ? '' : String(form.machine_id)}
                 onChange={handleChange}
                 className="mt-1 block w-full border rounded-md p-2"
               >
                 <option value="">-- Select Machine --</option>
                 {machines.map((m) => (
-                  <option key={m.id} value={m.id}>{m["Machine name"]}</option>
+                  <option key={m.machine_id} value={String(m.machine_id)}>
+                    {m.machine_name}
+                  </option>
                 ))}
               </select>
             </div>
@@ -241,7 +267,7 @@ export default function CreateKeyPage() {
         </div>
 
         <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">📋 Existing Keys</h2>
+          <h2 className="text-xl font-semibold mb-4">Existing Keys</h2>
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-100">
               <tr>
@@ -262,9 +288,11 @@ export default function CreateKeyPage() {
                     <td className="px-4 py-2">{k.key_id}</td>
                     <td className="px-4 py-2">{k.UID}</td>
                     <td className="px-4 py-2">{k.room_number}</td>
-                    <td className="px-4 py-2">{machine?.machine_id || '—'}</td>
-                    <td className="px-4 py-2">{machine?.["Machine name"] || '—'}</td>
-                    <td className="px-4 py-2">{owner?.name || '—'}</td>
+                    {/* show raw FK even if name missing */}
+                    <td className="px-4 py-2">{k.machine_id ?? '—'}</td>
+                    {/* resolved machine name via normalized field */}
+                    <td className="px-4 py-2">{machine ? machine.machine_name : '—'}</td>
+                    <td className="px-4 py-2">{owner?.name ?? '—'}</td>
                     <td className="px-4 py-2 space-x-2 text-right">
                       <button
                         onClick={() => handleEdit(k)}
