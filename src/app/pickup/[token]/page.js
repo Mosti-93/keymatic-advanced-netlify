@@ -5,8 +5,8 @@ import { useParams } from "next/navigation";
 import { supabase } from "@/utils/supabaseClient";
 
 const TABLE_NAME = "pickup_requests";
-const TOKEN_COLUMN = "client_id";
-const DB_COLUMNS = "client_first_name,client_last_name,machine_id,room_no,check_out,valid,machine_name,city";
+const TOKEN_COLUMN = "link_token";
+const DB_COLUMNS = "client_first_name,client_last_name,machine_id,room_no,check_out,valid,machine_name,city,door_on_req,door_status_req,relay_on_req,relay_status_req";
 
 function formatName(name) {
   return name ? name.charAt(0).toUpperCase() + name.slice(1).toLowerCase() : "";
@@ -43,11 +43,120 @@ async function callMachineAPI(endpoint, payload) {
   }
 }
 
+
+function fetchWithTimeout(url, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  return fetch(url, { signal: controller.signal })
+    .then(async (r) => {
+      clearTimeout(t);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const text = await r.text();
+      try { return JSON.parse(text); } catch { return { text }; }
+    })
+    .catch((err) => {
+      clearTimeout(t);
+      if (err.name === "AbortError") {
+        const e = new Error("timeout");
+        e.code = "TIMEOUT";
+        throw e;
+      }
+      throw err;
+    });
+}
+
+async function invalidateLink(supabase, token, roomNo, machineId) {
+  const isoNow = new Date().toISOString();
+
+  try {
+    // 1) Mark pickup request as invalid
+    const { error: e1 } = await supabase
+      .from(TABLE_NAME)
+      .update({ valid: false, pulled_at: isoNow })
+      .eq(TOKEN_COLUMN, token);
+    if (e1) throw e1;
+
+    // 2) Update key status to OUT
+    if (roomNo) {
+      const { error: e2 } = await supabase
+        .from("keys")
+        .update({ 
+          isPresent: 'OUT', 
+          last_status_time: isoNow,
+          statusText: "KEY_REMOVED"
+        })
+        .eq("room_number", roomNo);
+      if (e2) throw e2;
+
+      // 3) Get UID from keys table
+      const { data: keyData, error: e3 } = await supabase
+        .from("keys")
+        .select("UID")
+        .eq("room_number", roomNo)
+        .maybeSingle();
+      if (e3) throw e3;
+      if (!keyData) throw new Error(`No key found for room ${roomNo}`);
+
+      const uid = keyData.UID;
+      if (uid) {
+        // 4) Find and update the presence record
+        const query = supabase
+          .from("key_slot_presence")
+          .update({
+            UID: null,
+            removed_at: isoNow,
+            notes: `Key removed for room ${roomNo}`
+          })
+          .eq("UID", uid)
+          .is("removed_at", null);
+
+        if (machineId) {
+          query.eq("machine_id", machineId);
+        }
+
+        const { error: e4 } = await query;
+        if (e4) throw e4;
+      }
+    }
+  } catch (error) {
+    console.error("Error in invalidateLink:", error);
+    throw error;
+  }
+}
+
+
+
+function extractStatusText(r) {
+  if (!r) return "";
+  if (typeof r === "string") return r;
+  if (typeof r.text === "string") return r.text;
+  if (typeof r.status === "string") return r.status;
+  if (typeof r.message === "string") return r.message;
+  try { return JSON.stringify(r); } catch { return String(r); }
+}
+
+
+function isRelayOnSuccess(resp) {
+  const s = extractStatusText(resp);
+  return s.includes("Pi relay turned ON");
+}
+
+function parseLimitSwitch(resp) {
+  const s = extractStatusText(resp).toUpperCase();
+  if (s.includes("LIMIT SWITCH IS OFF")) return "OFF";
+  if (s.includes("LIMIT SWITCH IS ON")) return "ON";
+  return "UNKNOWN";
+}
+
+
+
 export default function Page() {
   const { token } = useParams();
 
   const [loading, setLoading] = useState(true);
   const [expired, setExpired] = useState(false);
+  const [expiredReason, setExpiredReason] = useState(null); // "invalid" | "time" | null
+
   const [error, setError] = useState("");
 
   const [data, setData] = useState(null);
@@ -81,38 +190,51 @@ export default function Page() {
           return;
         }
 
-        const { data: rows, error: qErr } = await supabase
-          .from(TABLE_NAME)
-          .select(DB_COLUMNS)
-          .eq(TOKEN_COLUMN, token)
-          .limit(1);
+        const { data: row, error: qErr } = await supabase
+  .from(TABLE_NAME)
+  .select(DB_COLUMNS)
+  .eq(TOKEN_COLUMN, token)
+  .single();  // <- exactly one link/request
 
-        if (qErr) {
-          setError("Database error: " + (qErr.message || "unknown"));
-          return;
-        }
-        if (!rows || rows.length === 0) {
-          setError("Invalid or not found.");
-          return;
-        }
+if (qErr) {
+  // 404 from .single() means "no row for this token"
+  if (qErr.code === "PGRST116" || qErr.details?.includes("Results contain 0 rows")) {
+    setError("Invalid or not found.");
+  } else {
+    setError("Database error: " + (qErr.message || "unknown"));
+  }
+  return;
+}
 
-        const row = rows[0];
         const now = new Date();
         const expiredByDate = row.check_out ? now > new Date(row.check_out) : false;
-        const inactive = row.valid === false;
+const inactive = row.valid === false;
 
-        if (expiredByDate || inactive) setExpired(true);
+if (expiredByDate) {
+  setExpired(true);
+  setExpiredReason("time");
+}
+if (inactive) {
+  setExpired(true);
+  setExpiredReason("invalid");
+}
 
         if (!mounted) return;
 
         setData({
-          city: row.city || "",
-          machineName: row.machine_name || "Unknown machine",
-          machineId: String(row.machine_id ?? "").toUpperCase(),
-          roomNo: row.room_no || "N/A",
-          clientLastName: row.client_last_name || "",
-          clientFirstName: row.client_first_name || "",
-        });
+  city: row.city || "",
+  machineName: row.machine_name || "Unknown machine",
+  machineId: String(row.machine_id ?? "").toUpperCase(),
+  roomNo: row.room_no || "N/A",
+  clientLastName: row.client_last_name || "",
+  clientFirstName: row.client_first_name || "",
+  // signed URLs for this request
+  doorOnUrl: row.door_on_req || "",
+  doorStatusUrl: row.door_status_req || "",
+  relayOnUrl: row.relay_on_req || "",
+  relayStatusUrl: row.relay_status_req || "",
+});
+
       } catch (e) {
         setError("Unexpected error: " + (e?.message || String(e)));
       } finally {
@@ -231,45 +353,143 @@ export default function Page() {
     }
   }
 
-  async function handleOpenDoor() {
-    setApiLoading(true);
-    setApiError(null);
-    
-    try {
-      const response = await callMachineAPI('door', { 
-        action: 'door_on_req',
-        machineId: data.machineId,
-        clientId: token 
-      });
-      
-      setDoorResponse(response);
-      setStep("releaseKey");
-    } catch (error) {
-      setApiError(`Door operation failed: ${error.message}`);
-    } finally {
-      setApiLoading(false);
+ async function handleOpenDoor() {
+  setApiLoading(true);
+  setApiError(null);
+
+  try {
+    if (!data?.doorOnUrl) throw new Error("Missing door_on_req URL");
+
+    console.log("Sending door_on_req to:", data.doorOnUrl);
+    const doorResp = await fetchWithTimeout(data.doorOnUrl, 10000);
+    console.log("Door_on_req response:", doorResp);
+
+    // Always show raw response (you can hide later)
+    setDoorResponse(doorResp);
+
+    // CASE 1: success pattern -> immediately check door_status_req
+    if (isRelayOnSuccess(doorResp) && data?.doorStatusUrl) {
+      try {
+        // small delay before checking door status
+await new Promise(res => setTimeout(res, 200));
+
+console.log("Sending door_status_req to:", data.doorStatusUrl);
+const statusResp = await fetchWithTimeout(data.doorStatusUrl, 8000);
+
+        console.log("Door_status_req response:", statusResp);
+
+        const limit = parseLimitSwitch(statusResp);
+
+        if (limit === "OFF") {
+          // Door opened -> move to release key
+          setDoorResponse({
+            door: doorResp,
+            statusText: extractStatusText(statusResp),
+          });
+          setStep("releaseKey");
+        } else if (limit === "ON") {
+          // Door still closed -> show message and keep user on same step with retry
+          setDoorResponse({
+            door: doorResp,
+            statusText: extractStatusText(statusResp),
+          });
+          setApiError("Door cant open please check if something block the door");
+          // Keep current step = "openDoor" so the button is still available
+        } else {
+          // Unknown/Unexpected -> show text but do not advance
+          setDoorResponse({
+            door: doorResp,
+            statusText: extractStatusText(statusResp),
+          });
+          setApiError("Unexpected door status. Please try again.");
+        }
+      } catch (e) {
+        if (e.code === "TIMEOUT") {
+          setApiError("machine are offline Please check if machine connected to power or call support");
+        } else {
+          setApiError(`Door status error: ${e.message}`);
+        }
+        // Stay on openDoor step
+      }
+      return; // We handled case 1 completely
     }
+
+    // CASE 2: bad/other response -> treat as offline
+    // (Our fetchWithTimeout throws on HTTP errors; reaching here means HTTP OK but no success pattern)
+    setApiError("machine are offline Please check if machine connected to power or call support");
+
+  } catch (error) {
+    // HTTP error / timeout / network -> offline message
+    if (error.code === "TIMEOUT" || String(error.message || "").startsWith("HTTP ")) {
+      setApiError("machine are offline Please check if machine connected to power or call support");
+    } else {
+      setApiError(`Door operation failed: ${error.message}`);
+    }
+  } finally {
+    setApiLoading(false);
   }
+}
+
+
 
   async function handleReleaseKey() {
-    setApiLoading(true);
-    setApiError(null);
-    
-    try {
-      const response = await callMachineAPI('relay', { 
-        action: 'relay_on_req',
-        machineId: data.machineId,
-        clientId: token 
-      });
-      
-      setRelayResponse(response);
-      setStep("closeDoor");
-    } catch (error) {
-      setApiError(`Key release failed: ${error.message}`);
-    } finally {
-      setApiLoading(false);
-    }
+  setApiLoading(true);
+  setApiError(null);
+
+  try {
+    if (!data?.relayOnUrl) throw new Error("Missing relay_on_req URL");
+
+    // 1) Send relay_on_req
+    console.log("Sending relay_on_req to:", data.relayOnUrl);
+    const relayResp = await fetchWithTimeout(data.relayOnUrl, 10000);
+    console.log("Relay_on_req response:", relayResp);
+
+    // Wait 5 seconds before checking key status
+    await new Promise(res => setTimeout(res, 5000));
+
+    if (!data?.relayStatusUrl) throw new Error("Missing relay_status_req URL");
+
+    // 2) Send relay_status_req
+    console.log("Sending relay_status_req to:", data.relayStatusUrl);
+    const statusResp = await fetchWithTimeout(data.relayStatusUrl, 8000);
+    console.log("Relay_status_req response:", statusResp);
+
+    // Extract esp_response text
+    const respText = (statusResp.esp_response || extractStatusText(statusResp)).toUpperCase();
+
+    if (respText.includes("LIMIT") && respText.includes(":ON")) {
+      // Key still in place
+      setApiError("Please take the key !!");
+      // Keep Release Key button active (stay on releaseKey step)
+    } else if (respText.includes("LIMIT") && respText.includes(":OFF")) {
+  // Key removed -> mark link invalid immediately
+  setApiError(""); // clear error
+  try {
+await invalidateLink(supabase, token, data.roomNo, data.machineId);  } catch (e) {
+    console.warn("invalidateLink failed:", e);
   }
+  alert("The key has been delivered successfully. Please close the door");
+  setStep("closeDoor");
+
+
+    } else {
+      // Unknown response
+      setApiError("Unexpected key status. Please try again.");
+    }
+
+  } catch (error) {
+    if (error.code === "TIMEOUT" || String(error.message || "").startsWith("HTTP ")) {
+      setApiError("Machine is offline. Please check if machine connected to power or call support");
+    } else {
+      setApiError(`Key release failed: ${error.message}`);
+    }
+  } finally {
+    setApiLoading(false);
+  }
+}
+
+
+
 
   if (loading) {
     return (
@@ -279,14 +499,20 @@ export default function Page() {
     );
   }
 
-  if (expired) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-red-700 to-red-900 text-white p-6">
-        <h1 className="text-5xl font-bold mb-4">Expired</h1>
-        <p className="text-lg text-center">This link is no longer valid.</p>
-      </div>
-    );
-  }
+ if (expired) {
+  const title = expiredReason === "invalid" ? "Invalid link" : "Expired";
+  const msg =
+    expiredReason === "invalid"
+      ? "This pickup link has already been used and is no longer valid."
+      : "This pickup link has expired and can’t be used anymore.";
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-red-700 to-red-900 text-white p-6">
+      <h1 className="text-5xl font-bold mb-4">{title}</h1>
+      <p className="text-lg text-center">{msg}</p>
+    </div>
+  );
+}
+
 
   if (!data) {
     return (
@@ -317,8 +543,8 @@ export default function Page() {
           Picking key No <span className="font-semibold">"{data?.roomNo}"</span>
         </p>
         <p>
-          From <span className="font-semibold">{data?.machineName}</span>
-          {data?.city && ` • ${data.city}`}
+          From Machine Name :<span className="font-semibold">{data?.machineName}</span>
+          {data?.city && ` / City: ${data.city}`}
         </p>
       </div>
 
@@ -408,40 +634,25 @@ export default function Page() {
             disabled={apiLoading}
             className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg w-full transition transform active:scale-95 disabled:opacity-50"
           >
-            {apiLoading ? "Opening..." : "Open Machine Door (door_on_req)"}
+            {apiLoading ? "Opening..." : "Open Machine Door"}
           </button>
-          {doorResponse && (
-            <div className="mt-3 p-2 bg-green-900/30 rounded-lg">
-              <p className="text-green-300">Response:</p>
-              <pre className="text-xs overflow-x-auto">
-                {JSON.stringify(doorResponse, null, 2)}
-              </pre>
-            </div>
-          )}
+          
           {apiError && <p className="text-red-300 mt-2">{apiError}</p>}
         </div>
       )}
 
       {step === "releaseKey" && (
         <div className="mt-5 text-center w-full max-w-xs">
-          <p className="text-xl mb-3 text-green-300">
-            Door Status: {doorResponse?.status || "Open"}
-          </p>
+    
+
           <button
             onClick={handleReleaseKey}
             disabled={apiLoading}
             className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg w-full transition transform active:scale-95 disabled:opacity-50"
           >
-            {apiLoading ? "Releasing..." : "Release Key (relay_on_req)"}
+            {apiLoading ? "Releasing...Please Pull the key Now !" : "Release Key"}
           </button>
-          {relayResponse && (
-            <div className="mt-3 p-2 bg-green-900/30 rounded-lg">
-              <p className="text-green-300">Response:</p>
-              <pre className="text-xs overflow-x-auto">
-                {JSON.stringify(relayResponse, null, 2)}
-              </pre>
-            </div>
-          )}
+          
           {apiError && <p className="text-red-300 mt-2">{apiError}</p>}
         </div>
       )}
