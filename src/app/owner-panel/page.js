@@ -8,8 +8,22 @@ export default function OwnerPanelPage() {
   const [ownerId, setOwnerId] = useState(null);
   const [profile, setProfile] = useState(null);
   const [form, setForm] = useState({
-    firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: ''
-  });
+  firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: '', platform: ''
+});
+const platforms = [
+  "Airbnb",
+  "Booking.com",
+  "Vrbo",
+  "Vacasa",
+  "FlipKey",
+  "Whimstay",
+  "HomeExchange",
+  "Hipcamp",
+  "Misterb&b",
+  "ThirdHome",
+  "Fairbnb & similar"
+];
+
   const [clients, setClients] = useState([]);
   const [keys, setKeys] = useState([]);
   const [machines, setMachines] = useState([]);
@@ -30,7 +44,7 @@ export default function OwnerPanelPage() {
     setSlotPresence(data || []);
   };
 
-  async function handleStartPickup(client) {
+async function handleStartPickup(client) {
   setMessage("⏳ Starting pickup...");
 
   // Resolve first/last even if only client.name exists
@@ -44,21 +58,40 @@ export default function OwnerPanelPage() {
     '';
 
   const key = keys.find(k => k.uuid === client.key_id);
+  
+  // Validate key exists
+  if (!key) {
+    setMessage("❌ No key assigned to this client");
+    return;
+  }
+
   const machineId = key?.machine_id || "";
   const roomNo = key?.room_number || "";
   const UID = key?.UID || "";
 
-  // Fallback for slot_number using slotPresence table
-  let slot_number = key?.slot_number;
-  if (!slot_number && key?.UID && key?.machine_id) {
-    const slot = slotPresence.find(
-      sp => sp.UID === key.UID && String(sp.machine_id) === String(key.machine_id)
-    );
-    slot_number = slot?.slot_number || "";
+  // Check if key is physically in the machine
+  const keyInMachine = slotPresence.some(sp => sp.UID === UID);
+  if (!keyInMachine) {
+    setMessage("❌ Key not detected in machine - please insert the key first");
+    return;
   }
 
-  if (!UID || !slot_number) {
-    setMessage("❌ Key data missing: UID or slot number not found for the selected key.");
+  // Fallback for slot_number using slotPresence table
+  let slot_number = key?.slot_number || "";
+  if (!slot_number && key?.UID) {
+    const matchingSlots = slotPresence.filter(sp => sp.UID === key.UID);
+    
+    if (matchingSlots.length > 0) {
+      // Try exact match first
+      const exactMatch = matchingSlots.find(
+        sp => String(sp.machine_id) === String(key.machine_id)
+      );
+      slot_number = exactMatch?.slot_number || matchingSlots[0]?.slot_number || "";
+    }
+  }
+
+  if (!slot_number) {
+    setMessage("❌ Could not determine slot number for the key");
     return;
   }
 
@@ -69,11 +102,9 @@ export default function OwnerPanelPage() {
       body: JSON.stringify({
         clientId: client.id,
         clientEmail: client.email || "",
-        // >>> send names explicitly <<<
         clientFirstName: parsedFirst,
         clientLastName: parsedLast,
         clientName: `${parsedFirst} ${parsedLast}`.trim(),
-
         keyId: client.key_id,
         machineId,
         roomNo,
@@ -85,10 +116,25 @@ export default function OwnerPanelPage() {
     });
 
     const data = await res.json();
-    if (data.success) setMessage("✅ Pickup email sent!");
-    else setMessage("❌ Failed: " + (data.error || "Unknown error."));
+    
+    if (!res.ok) {
+      // Handle HTTP errors
+      let errorMsg = data?.error || "Pickup failed";
+      if (res.status === 400) {
+        errorMsg = "Key not detected in machine - please insert the key first";
+      }
+      setMessage(`❌ ${errorMsg}`);
+      return;
+    }
+
+    if (data.success) {
+      setMessage("✅ Pickup email sent!");
+    } else {
+      setMessage(`❌ ${data.error || "Unknown error occurred"}`);
+    }
   } catch (e) {
-    setMessage("❌ Pickup error: " + e.message);
+    console.error("Pickup error:", e);
+    setMessage(`❌ Network error: ${e.message}`);
   }
 }
 
@@ -106,7 +152,7 @@ export default function OwnerPanelPage() {
   const fetchKeys = async () => {
     const { data } = await supabase
       .from('keys')
-      .select('uuid, room_number, owner_id, UID, machine_id, slot_number')
+      .select('uuid, room_number, owner_id, UID, machine_id')
       .eq('owner_id', ownerId);
     setKeys(data || []);
   };
@@ -140,26 +186,30 @@ export default function OwnerPanelPage() {
     let result;
     if (editMode) {
       result = await supabase.from('clients').update({
-        first_name: firstName,
-        last_name: lastName,
-        email,
-        phone,
-        key_id: keyId,
-        check_in: checkIn,
-        check_out: checkOut,
-        owner_id: ownerId
-      }).eq('id', editingId);
+  first_name: firstName,
+  last_name: lastName,
+  email,
+  phone,
+  key_id: keyId,
+  check_in: checkIn,
+  check_out: checkOut,
+  owner_id: ownerId,
+  platform: form.platform
+}).eq('id', editingId);
+
     } else {
       result = await supabase.from('clients').insert([{
-        first_name: firstName,
-        last_name: lastName,
-        email,
-        phone,
-        key_id: keyId,
-        check_in: checkIn,
-        check_out: checkOut,
-        owner_id: ownerId
-      }]);
+  first_name: firstName,
+  last_name: lastName,
+  email,
+  phone,
+  key_id: keyId,
+  check_in: checkIn,
+  check_out: checkOut,
+  owner_id: ownerId,
+  platform: form.platform
+}]);
+
     }
 
     const { error } = result;
@@ -169,7 +219,8 @@ export default function OwnerPanelPage() {
       else setMessage(`❌ ${error.message}`);
     } else {
       setMessage(editMode ? '✅ Client updated.' : '✅ Client saved!');
-      setForm({ firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: '' });
+      setForm({ firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: '', platform: '' });
+
       setEditMode(false);
       setEditingId(null);
       fetchClients();
@@ -177,19 +228,21 @@ export default function OwnerPanelPage() {
   };
 
   const handleEdit = (client) => {
-    setForm({
-      firstName: client.first_name || '',
-      lastName: client.last_name || '',
-      email: client.email,
-      phone: client.phone,
-      keyId: client.key_id || '',
-      checkIn: client.check_in,
-      checkOut: client.check_out
-    });
-    setEditMode(true);
-    setEditingId(client.id);
-    setMessage(`✏️ Editing ${client.first_name} ${client.last_name}`);
-  };
+  setForm({
+    firstName: client.first_name || '',
+    lastName: client.last_name || '',
+    email: client.email,
+    phone: client.phone,
+    keyId: client.key_id || '',
+    checkIn: client.check_in,
+    checkOut: client.check_out,
+    platform: client.platform || ''
+  });
+  setEditMode(true);
+  setEditingId(client.id);
+  setMessage(`✏️ Editing ${client.first_name} ${client.last_name}`);
+};
+
 
   const handleDelete = async (id) => {
     if (!confirm('Are you sure you want to delete this client?')) return;
@@ -220,13 +273,15 @@ export default function OwnerPanelPage() {
   };
 
   const sorters = {
-    check_in: client => client.check_in || '',
-    check_out: client => client.check_out || '',
-    full_name: client => ((client.first_name || '') + ' ' + (client.last_name || '')).toLowerCase(),
-    key_info: client => getKeyInfo(client).toLowerCase(),
-    email: client => (client.email || '').toLowerCase(),
-    phone: client => (client.phone || '').toLowerCase()
-  };
+  check_in: client => client.check_in || '',
+  check_out: client => client.check_out || '',
+  full_name: client => ((client.first_name || '') + ' ' + (client.last_name || '')).toLowerCase(),
+  key_info: client => getKeyInfo(client).toLowerCase(),
+  platform: client => (client.platform || '').toLowerCase(),
+  email: client => (client.email || '').toLowerCase(),
+  phone: client => (client.phone || '').toLowerCase()
+};
+
 
   const filterClients = () => {
     const today = new Date().toISOString().split('T')[0];
@@ -242,14 +297,16 @@ export default function OwnerPanelPage() {
     if (tableFilter.trim()) {
       const f = tableFilter.trim().toLowerCase();
       filtered = filtered.filter(client =>
-        (client.first_name || '').toLowerCase().includes(f) ||
-        (client.last_name || '').toLowerCase().includes(f) ||
-        (client.email || '').toLowerCase().includes(f) ||
-        (client.phone || '').toLowerCase().includes(f) ||
-        (client.check_in || '').toLowerCase().includes(f) ||
-        (client.check_out || '').toLowerCase().includes(f) ||
-        getKeyInfo(client).toLowerCase().includes(f)
-      );
+  (client.first_name || '').toLowerCase().includes(f) ||
+  (client.last_name || '').toLowerCase().includes(f) ||
+  (client.email || '').toLowerCase().includes(f) ||
+  (client.phone || '').toLowerCase().includes(f) ||
+  (client.check_in || '').toLowerCase().includes(f) ||
+  (client.check_out || '').toLowerCase().includes(f) ||
+  getKeyInfo(client).toLowerCase().includes(f) ||
+  (client.platform || '').toLowerCase().includes(f)
+);
+
     }
     if (sortField && sorters[sortField]) {
       filtered.sort((a, b) => {
@@ -380,6 +437,26 @@ export default function OwnerPanelPage() {
                 ))}
               </select>
             </div>
+<div>
+  <label className="block text-sm font-medium text-gray-700">Platform</label>
+  <input
+    list="platform-options"
+    name="platform"
+    value={form.platform}
+    onChange={handleChange}
+    placeholder="Select or type platform"
+    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+    required
+  />
+  <datalist id="platform-options">
+    {platforms.map((p, idx) => (
+      <option key={idx} value={p} />
+    ))}
+    <option value="Other" />
+  </datalist>
+</div>
+
+
             <div className="flex gap-2 col-span-1 md:col-span-2">
               <div className="w-1/2">
                 <label className="block text-sm font-medium text-gray-700">Check-In Date & Time</label>
@@ -413,7 +490,8 @@ export default function OwnerPanelPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setForm({ firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: '' });
+                    setForm({ firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: '', platform: '' });
+
                     setEditMode(false);
                     setEditingId(null);
                     setMessage('');
@@ -465,12 +543,22 @@ export default function OwnerPanelPage() {
                   >
                     FULL NAME {sortField === 'full_name' && (sortDir === 'asc' ? '▲' : '▼')}
                   </th>
+
+
                   <th
                     className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
                     onClick={() => handleSort('key_info')}
                   >
                     ROOM / UID {sortField === 'key_info' && (sortDir === 'asc' ? '▲' : '▼')}
                   </th>
+
+                  <th
+  className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
+  onClick={() => handleSort('platform')}
+>
+  PLATFORM {sortField === 'platform' && (sortDir === 'asc' ? '▲' : '▼')}
+</th>
+
                   <th
                     className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left w-48 cursor-pointer"
                     onClick={() => handleSort('check_in')}
@@ -517,6 +605,8 @@ export default function OwnerPanelPage() {
                       {(client.first_name || '') + ' ' + (client.last_name || '')}
                     </td>
                     <td className="px-6 py-4 border border-gray-300">{getKeyInfo(client)}</td>
+                    <td className="px-6 py-4 border border-gray-300">{client.platform || '-'}</td>
+
                     <td className="px-6 py-4 border border-gray-300 w-48">{displayDateTime(client.check_in)}</td>
                     <td className="px-6 py-4 border border-gray-300 w-48">{displayDateTime(client.check_out)}</td>
                     <td className="px-6 py-4 border border-gray-300">{client.email}</td>
@@ -541,7 +631,7 @@ export default function OwnerPanelPage() {
                 ))}
                 {filterClients().length === 0 && (
                   <tr>
-                    <td colSpan={8} className="text-center text-gray-400 py-4">
+                    <td colSpan={9} className="text-center text-gray-400 py-4">
                       No clients found.
                     </td>
                   </tr>

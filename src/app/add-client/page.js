@@ -4,8 +4,9 @@ import { supabase } from "@/utils/supabaseClient";
 
 export default function AddClientPage() {
   const [form, setForm] = useState({
-    firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: ''
-  });
+  firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: '', platform: ''
+});
+
   const [clients, setClients] = useState([]);
   const [keys, setKeys] = useState([]);
   const [owners, setOwners] = useState([]);
@@ -20,6 +21,21 @@ export default function AddClientPage() {
   const [sortField, setSortField] = useState('check_in');
   const [sortDir, setSortDir] = useState('asc');
   const [slotPresence, setSlotPresence] = useState([]); // NEW
+
+  const platforms = [
+  "Airbnb",
+  "Booking.com",
+  "Vrbo",
+  "Vacasa",
+  "FlipKey",
+  "Whimstay",
+  "HomeExchange",
+  "Hipcamp",
+  "Misterb&b",
+  "ThirdHome",
+  "Fairbnb & similar"
+];
+
 
   useEffect(() => {
     fetchClients();
@@ -37,7 +53,7 @@ export default function AddClientPage() {
   const fetchKeys = async () => {
     const { data, error } = await supabase
       .from('keys')
-      .select('uuid, room_number, owner_id, UID, machine_id, slot_number');
+      .select('uuid, room_number, owner_id, UID, machine_id');
     if (!error) setKeys(data || []);
   };
 
@@ -88,6 +104,8 @@ export default function AddClientPage() {
         check_in: checkIn,
         check_out: checkOut,
         owner_id
+        , platform: form.platform
+
       }).eq('id', editingId);
     } else {
       result = await supabase.from('clients').insert([{
@@ -99,6 +117,8 @@ export default function AddClientPage() {
         check_in: checkIn,
         check_out: checkOut,
         owner_id
+        , platform: form.platform
+
       }]);
     }
 
@@ -113,7 +133,8 @@ export default function AddClientPage() {
       }
     } else {
       setMessage(editMode ? '✅ Client updated.' : '✅ Client saved!');
-      setForm({ firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: '' });
+     setForm({ firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: '', platform: '' });
+
       setSelectedOwner(null);
       setOwnerSearch('');
       setEditMode(false);
@@ -130,15 +151,19 @@ export default function AddClientPage() {
       firstName = nameParts[0] || '';
       lastName = nameParts.slice(1).join(' ') || '';
     }
-    setForm({
-      firstName,
-      lastName,
-      email: client.email,
-      phone: client.phone,
-      keyId: client.key_id || '',
-      checkIn: client.check_in,
-      checkOut: client.check_out
-    });
+    
+setForm({
+  firstName,
+  lastName,
+  email: client.email || '',
+  phone: client.phone || '',
+  keyId: client.key_id || '',
+  checkIn: client.check_in || '',
+  checkOut: client.check_out || '',
+  platform: client.platform || ''
+});
+
+
     const owner = owners.find(o => o.id === client.owner_id) || null;
     setSelectedOwner(owner);
     setOwnerSearch(owner?.email || '');
@@ -156,37 +181,43 @@ export default function AddClientPage() {
     }
   };
 
-  const handleStartPickup = async (client) => {
-    // Resolve first/last even if only client.name exists
-    const parsedFirst =
-      client.first_name ||
-      (client.name ? client.name.trim().split(' ')[0] : '') ||
-      '';
-    const parsedLast =
-      client.last_name ||
-      (client.name ? client.name.trim().split(' ').slice(1).join(' ') : '') ||
-      '';
-
-    const key = keys.find(k => k.uuid === client.key_id);
-
-    if (!key?.UID) {
-      setMessage("❌ Key has no UID assigned!");
-      return;
+const handleStartPickup = async (client) => {
+  try {
+    // Validate client data
+    if (!client?.id) {
+      throw new Error("Invalid client data");
     }
 
-    // Real-time presence check
-    const { data: slot } = await supabase
+    // Resolve first/last names
+    const parsedFirst = client.first_name || 
+      (client.name ? client.name.trim().split(' ')[0] : '') || '';
+    const parsedLast = client.last_name || 
+      (client.name ? client.name.trim().split(' ').slice(1).join(' ') : '') || '';
+
+    // Find the key
+    const key = keys.find(k => k.uuid === client.key_id);
+    if (!key) {
+      throw new Error("No key assigned to this client");
+    }
+    if (!key?.UID) {
+      throw new Error("Key has no UID assigned");
+    }
+
+    // Check key presence in machine
+    const { data: slot, error: slotError } = await supabase
       .from('key_slot_presence')
       .select('*')
       .eq('UID', key.UID)
       .maybeSingle();
 
+    if (slotError) {
+      throw new Error(`Failed to check key presence: ${slotError.message}`);
+    }
     if (!slot) {
-      setMessage("❌ The key is NOT in the machine right now. Please check bookings or missing key.");
-      return;
+      throw new Error("Key not detected in machine - please verify physical key presence");
     }
 
-    // Prefer presence slot -> key.slot_number -> cached presence
+    // Determine slot number with fallbacks
     let slot_number = slot?.slot_number || key?.slot_number;
     if (!slot_number && key?.UID && key?.machine_id) {
       const spSlot = slotPresence.find(
@@ -196,52 +227,70 @@ export default function AddClientPage() {
     }
 
     if (!slot_number) {
-      setMessage("❌ Key data missing: slot number not found for the selected key.");
-      return;
+      throw new Error("Could not determine slot number for the key");
     }
 
-    setMessage("⏳ Starting pickup...");
-
-    const roomNo = key.room_number || "";
-    const UID = key.UID || "";
-    const machineId = key.machine_id || "";
+    // Prepare payload
     const owner = owners.find(o => o.id === key?.owner_id) || {};
-    const ownerName = owner.name || "";
-
-    // >>> Send explicit first/last so backend can store them <<<
     const pickupPayload = {
       clientId: client.id,
       clientEmail: client.email || "",
-      clientFirstName: parsedFirst,                           // NEW
-      clientLastName: parsedLast,                             // NEW
-      clientName: `${parsedFirst} ${parsedLast}`.trim(),      // (still send full name)
-      ownerName,
+      clientFirstName: parsedFirst,
+      clientLastName: parsedLast,
+      clientName: `${parsedFirst} ${parsedLast}`.trim(),
+      ownerName: owner.name || "",
       keyId: client.key_id,
-      roomNo,
-      UID,
+      roomNo: key.room_number || "",
+      UID: key.UID || "",
       slot_number,
       checkIn: client.check_in,
       checkOut: client.check_out,
-      machineId,
+      machineId: key.machine_id || "",
     };
 
-    try {
-      const res = await fetch("/api/pickup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(pickupPayload),
-      });
+    setMessage("⏳ Starting pickup process...");
 
-      const data = await res.json();
-      if (data.success) {
-        setMessage("✅ Pickup started and email sent!");
-      } else {
-        setMessage("❌ Failed: " + (data.error || "Unknown error."));
+    // API call with comprehensive error handling
+    const res = await fetch("/api/pickup", {
+      method: "POST",
+      headers: { 
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(pickupPayload),
+    });
+
+    // Handle HTTP errors
+    if (!res.ok) {
+      let errorMsg = `Server error: ${res.status}`;
+      try {
+        const errorData = await res.json();
+        errorMsg = errorData.error || errorData.message || errorMsg;
+      } catch (e) {
+        console.warn("Could not parse error response", e);
       }
-    } catch (e) {
-      setMessage("❌ Pickup error: " + e.message);
+      throw new Error(errorMsg);
     }
-  };
+
+    // Handle successful response
+    const data = await res.json();
+    if (!data?.success) {
+      throw new Error(data?.error || "Pickup failed without error details");
+    }
+
+    // Success case
+    setMessage("✅ Pickup initiated successfully!");
+    fetchClients(); // Refresh client list
+
+  } catch (error) {
+    console.error("Pickup error:", error);
+    setMessage(`❌ ${error.message}`);
+    
+    // Special handling for network errors
+    if (error.name === "TypeError" && error.message.includes("Failed to fetch")) {
+      setMessage("❌ Network error - could not connect to server");
+    }
+  }
+};
 
   // --------------------------------------------------------
 
@@ -282,6 +331,8 @@ export default function AddClientPage() {
         (client.check_in || '').toLowerCase().includes(f) ||
         (client.check_out || '').toLowerCase().includes(f) ||
         getKeyInfo(client).toLowerCase().includes(f)
+        || (client.platform || '').toLowerCase().includes(f)
+
       );
     }
 
@@ -292,6 +343,7 @@ export default function AddClientPage() {
       key_info: client => getKeyInfo(client).toLowerCase(),
       email: client => (client.email || '').toLowerCase(),
       phone: client => (client.phone || '').toLowerCase()
+      
     };
 
     if (sortField && sorters[sortField]) {
@@ -444,31 +496,53 @@ export default function AddClientPage() {
               )}
             </div>
             {/* Key Dropdown */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Room No / Key</label>
-              <select
-                name="keyId"
-                value={form.keyId}
-                onChange={handleChange}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-                disabled={!selectedOwner}
-                required
-              >
-                <option value="">Select key for owner</option>
-                {selectedOwner
-                  ? keys.filter(k => k.owner_id === selectedOwner.id).map((k) => (
-                      <option key={k.uuid} value={k.uuid}>
-                        {k.room_number} (UID: {k.UID || k.uuid})
-                      </option>
-                    ))
-                  : keys.map((k) => (
-                      <option key={k.uuid} value={k.uuid}>
-                        {k.room_number} (UID: {k.UID || k.uuid})
-                      </option>
-                    ))
-                }
-              </select>
-            </div>
+<div>
+  <label className="block text-sm font-medium text-gray-700">Room No / Key</label>
+  <select
+    name="keyId"
+    value={form.keyId}
+    onChange={handleChange}
+    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+    disabled={!selectedOwner && !editMode}
+    required
+  >
+    <option value="">Select key for owner</option>
+    {selectedOwner
+      ? keys
+          .filter(k => String(k.owner_id) === String(selectedOwner.id))
+          .map(k => (
+            <option key={k.uuid} value={k.uuid}>
+              {k.room_number} (UID: {k.UID || k.uuid})
+            </option>
+          ))
+      : keys.map(k => (
+          <option key={k.uuid} value={k.uuid}>
+            {k.room_number} (UID: {k.UID || k.uuid})
+          </option>
+        ))}
+  </select>
+</div>
+
+{/* Platform (sibling to Key, will render beside it in md:grid-cols-2) */}
+<div>
+  <label className="block text-sm font-medium text-gray-700">Platform</label>
+  <input
+    list="platform-options"
+    name="platform"
+    value={form.platform}
+    onChange={handleChange}
+    placeholder="Select or type platform"
+    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+    required
+  />
+  <datalist id="platform-options">
+    {platforms.map((p, idx) => (
+      <option key={idx} value={p} />
+    ))}
+    <option value="Other" />
+  </datalist>
+</div>
+
             {/* Check-in/Check-out SIDE BY SIDE */}
             <div className="flex gap-2 col-span-1 md:col-span-2">
               <div className="w-1/2">
@@ -504,7 +578,8 @@ export default function AddClientPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setForm({ firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: '' });
+                    setForm({ firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: '', platform: '' });
+
                     setEditMode(false);
                     setEditingId(null);
                     setSelectedOwner(null);
@@ -577,6 +652,14 @@ export default function AddClientPage() {
                   >
                     ROOM / UID {sortField === 'key_info' && (sortDir === 'asc' ? '▲' : '▼')}
                   </th>
+                 <th
+  className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
+  onClick={() => handleSort('platform')}
+>
+  PLATFORM {sortField === 'platform' && (sortDir === 'asc' ? '▲' : '▼')}
+</th>
+
+
                   <th
                     className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left w-48 cursor-pointer"
                     onClick={() => handleSort('check_in')}
@@ -601,6 +684,7 @@ export default function AddClientPage() {
                   >
                     PHONE {sortField === 'phone' && (sortDir === 'asc' ? '▲' : '▼')}
                   </th>
+
                   <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-right">
                     ACTIONS
                   </th>
@@ -623,6 +707,8 @@ export default function AddClientPage() {
                       {(client.first_name || '') + ' ' + (client.last_name || '')}
                     </td>
                     <td className="px-6 py-4 border border-gray-300">{getKeyInfo(client)}</td>
+                    <td className="px-6 py-4 border border-gray-300">{client.platform || '-'}</td>
+
                     <td className="px-6 py-4 border border-gray-300 w-48">
                       <div>
                         {client.check_in?.slice(0, 10)}
@@ -637,6 +723,8 @@ export default function AddClientPage() {
                     </td>
                     <td className="px-6 py-3 border border-gray-300">{client.email}</td>
                     <td className="px-6 py-4 border border-gray-300">{client.phone}</td>
+                    
+
                     <td className="px-6 py-4 border border-gray-300">
                       <div className="flex flex-row gap-2 justify-end">
                         <button
@@ -657,7 +745,7 @@ export default function AddClientPage() {
                 ))}
                 {filterClients().length === 0 && (
                   <tr>
-                    <td colSpan={8} className="text-center text-gray-400 py-4">
+                    <td colSpan={9} className="text-center text-gray-400 py-4">
                       No clients found.
                     </td>
                   </tr>
