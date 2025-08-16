@@ -189,6 +189,15 @@ function parseLimitSwitch(resp) {
 
 export default function Page() {
   const { token } = useParams();
+  // normalize the URL param to a single string
+  const linkToken = typeof token === "string"
+    ? token
+    : Array.isArray(token)
+    ? token[0]
+    : String(token ?? "");
+
+  console.log("[pickup] page mounted. token =", token, "linkToken =", linkToken);
+
 
   const [loading, setLoading] = useState(true);
   const [expired, setExpired] = useState(false);
@@ -223,7 +232,8 @@ const [step, setStep] = useState("welcome");
       setError("");
 
       try {
-        if (!token) {
+        if (!linkToken) {
+
           setError("Missing token in URL.");
           return;
         }
@@ -231,7 +241,8 @@ const [step, setStep] = useState("welcome");
         const { data: row, error: qErr } = await supabase
           .from(TABLE_NAME)
           .select(DB_COLUMNS)
-          .eq(TOKEN_COLUMN, token)
+          .eq(TOKEN_COLUMN, linkToken)
+
           .single();
 
         if (qErr) {
@@ -296,7 +307,8 @@ const [step, setStep] = useState("welcome");
 
     load();
     return () => { mounted = false; };
-  }, [token]);
+  }, [linkToken]);
+
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -400,8 +412,10 @@ const [step, setStep] = useState("welcome");
   }
 
   async function handleOpenDoor() {
-    setApiLoading(true);
-    setApiError(null);
+  setApiLoading(true);
+  setApiError(null);
+  console.log("[pickup] handleOpenDoor start");
+
 
     try {
       if (!data?.doorOnUrl) throw new Error("Missing door_on_req URL");
@@ -413,8 +427,10 @@ const [step, setStep] = useState("welcome");
         try {
           await new Promise(res => setTimeout(res, 200));
           const statusResp = await fetchWithTimeout(data.doorStatusUrl, 8000);
-          const limit = parseLimitSwitch(statusResp);
+const limit = parseLimitSwitch(statusResp);
+console.log("[pickup] door limit switch =", limit, "raw:", statusResp);
 
+      
           if (limit === "OFF") {
             setDoorResponse({ door: doorResp, statusText: extractStatusText(statusResp) });
             setStep("releaseKey");
@@ -444,50 +460,99 @@ const [step, setStep] = useState("welcome");
     }
   }
 
-  async function handleReleaseKey() {
-    setApiLoading(true);
-    setApiError(null);
+ async function handleReleaseKey() {
+  setApiLoading(true);
+  setApiError(null);
+  console.log("[pickup] handleReleaseKey start");
 
-    try {
-      if (!data?.relayOnUrl) throw new Error("Missing relay_on_req URL");
+  try {
+    if (!data?.relayOnUrl) throw new Error("Missing relay_on_req URL");
 
-      const relayResp = await fetchWithTimeout(data.relayOnUrl, 10000);
-      await new Promise(res => setTimeout(res, 5000));
+    const relayResp = await fetchWithTimeout(data.relayOnUrl, 10000);
+    console.log("[pickup] relay ON response =", relayResp);
 
-      if (!data?.relayStatusUrl) throw new Error("Missing relay_status_req URL");
+    // Give the hardware time to move
+    await new Promise((res) => setTimeout(res, 5000));
 
-      const statusResp = await fetchWithTimeout(data.relayStatusUrl, 8000);
-      const respText = (statusResp.esp_response || extractStatusText(statusResp)).toUpperCase();
+    if (!data?.relayStatusUrl) throw new Error("Missing relay_status_req URL");
 
-      if (respText.includes("LIMIT") && respText.includes(":ON")) {
-        setApiError("Please take the key !!");
-      } else if (respText.includes("LIMIT") && respText.includes(":OFF")) {
-        setApiError("");
-        try {
-          await invalidateByUID(supabase, {
-            token,
-            uid: data.uid,
-            machineId: data.machineId,
-            roomNo: data.roomNo
-          });
-        } catch (e) {
-          console.warn("invalidateByUID failed:", e);
-        }
-        setRelayResponse(null);
-        alert("The key has been delivered successfully. Please close the door");
-        setStep("closeDoor");
-      } else {
-        setApiError("Unexpected key status. Please try again.");
-      }
-    } catch (error) {
-      // @ts-ignore
-      if (error.code === "TIMEOUT" || String(error.message || "").startsWith("HTTP "))
-        setApiError("Machine is offline. Please check if machine connected to power or call support");
-      else setApiError(`Key release failed: ${error.message}`);
-    } finally {
-      setApiLoading(false);
+    const statusResp = await fetchWithTimeout(data.relayStatusUrl, 8000);
+    const respText = (statusResp.esp_response || extractStatusText(statusResp)).toUpperCase();
+    console.log("[pickup] relay status respText =", respText);
+
+    if (respText.includes("LIMIT") && respText.includes(":ON")) {
+      setApiError("Please take the key !!");
+      return;
     }
+
+    if (respText.includes("LIMIT") && respText.includes(":OFF")) {
+      setApiError("");
+
+      // 1) Mark DB state (invalidate link, mark key out, clear slot)
+      try {
+        await invalidateByUID(supabase, {
+          token: linkToken,             // <-- use normalized token
+          uid: data.uid,
+          machineId: data.machineId,
+          roomNo: data.roomNo,
+        });
+        console.log("[pickup] invalidateByUID done");
+      } catch (e) {
+        console.warn("invalidateByUID failed:", e);
+      }
+
+      // 2) TRIGGER EMAILS — call your Supabase Edge Function (notify-pickup)
+      //    Inserted RIGHT AFTER invalidateByUID and BEFORE closing UI
+      try {
+        const payload = {
+          token: linkToken,            // <-- use normalized token
+          uid: data?.uid,
+          machineId: data?.machineId,
+          roomNo: data?.roomNo,
+        };
+        console.log("notify-pickup POST payload →", payload);
+
+        const resp = await fetch(
+          "https://vnnqjmsshzbmngnlyvzq.functions.supabase.co/notify-pickup",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          }
+        );
+
+        const raw = await resp.text();
+        console.log("notify-pickup → status", resp.status, "body", raw);
+
+        if (!resp.ok) {
+          setApiError(`Couldn’t send confirmation email (${resp.status}).`);
+        }
+      } catch (e) {
+        console.warn("notify-pickup fetch error:", e);
+        setApiError("Email trigger failed. Check console for details.");
+      }
+
+      // 3) Continue the UI flow
+      setRelayResponse(null);
+      alert("The key has been delivered successfully. Please close the door");
+      setStep("closeDoor");
+      return;
+    }
+
+    // Unknown response
+    setApiError("Unexpected key status. Please try again.");
+  } catch (error) {
+    // @ts-ignore
+    if (error.code === "TIMEOUT" || String(error.message || "").startsWith("HTTP ")) {
+      setApiError("Machine is offline. Please check if machine connected to power or call support");
+    } else {
+      setApiError(`Key release failed: ${error.message}`);
+    }
+  } finally {
+    setApiLoading(false);
   }
+}
+
 
   if (loading) {
     return (
