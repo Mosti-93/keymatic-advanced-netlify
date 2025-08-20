@@ -6,7 +6,7 @@ import { supabase } from "@/utils/supabaseClient";
 
 const TABLE_NAME = "pickup_requests";
 const TOKEN_COLUMN = "link_token";
-const DB_COLUMNS = "client_first_name,client_last_name,machine_id,room_no,check_out,valid,machine_name,city,platform,door_on_req,door_status_req,relay_on_req,relay_status_req";
+const DB_COLUMNS = "client_first_name,client_last_name,machine_id,room_no,check_out,valid,machine_name,city,machine_address,platform,door_on_req,door_status_req,relay_on_req,relay_status_req";
 
 function formatName(name) {
   return name ? name.charAt(0).toUpperCase() + name.slice(1).toLowerCase() : "";
@@ -270,6 +270,7 @@ const [step, setStep] = useState("welcome");
 
         setData({
           city: row.city || "",
+          machineAddress: row.machine_address || "",
           machineName: row.machine_name || "Unknown machine",
           machineId: String(row.machine_id ?? "").toUpperCase(),
           roomNo: row.room_no ?? null,
@@ -634,14 +635,18 @@ console.log("[pickup] door limit switch =", limit, "raw:", statusResp);
 
       {/* Confirmation Lines */}
       <div className="text-sm leading-relaxed text-white/90 space-y-1">
-        <p>Please confirm the following:</p>
-        <p>📍 You are now in <strong>{data?.city ?? "-"}</strong></p>
-        <p>🏷️ Confirm the Machine Name is: <strong>{formatName(data?.machineName) ?? "-"}</strong>
-</p>
-        <p>🔑 To grab key for room <strong>{data?.roomNo ?? "-"}</strong></p>
-        <p>🖥️ Platform: <strong>{data?.platform ?? "-"}</strong></p>
+  <p>Please confirm the following:</p>
+  <p>
+    📍 City: <strong>{data?.city ?? "-"}</strong>
+    {data?.machineAddress && ` — ${data.machineAddress}`}
+  </p>
+  <p>
+    🏷️ Confirm the Machine Name is: <strong>{formatName(data?.machineName) ?? "-"}</strong>
+  </p>
+  <p>🔑 To grab key for room <strong>{data?.roomNo ?? "-"}</strong></p>
+  <p>🖥️ Platform: <strong>{data?.platform ?? "-"}</strong></p>
+</div>
 
-      </div>
 
       {/* Info */}
       <p className="text-sm text-white/85">
