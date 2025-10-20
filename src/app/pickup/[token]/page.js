@@ -6,7 +6,7 @@ import { supabase } from "@/utils/supabaseClient";
 
 const TABLE_NAME = "pickup_requests";
 const TOKEN_COLUMN = "link_token";
-const DB_COLUMNS = "client_first_name,client_last_name,machine_id,room_no,check_out,valid,machine_name,city,machine_address,platform,door_on_req,door_status_req,relay_on_req,relay_status_req";
+const DB_COLUMNS = "client_first_name,client_last_name,machine_id,room_no,check_out,valid,machine_name,city,machine_address,platform,door_on_req,door_status_req,relay_on_req,relay_status_req,LCD_room_req,LCD_flash_req,LCD_off_req";
 
 function formatName(name) {
   return name ? name.charAt(0).toUpperCase() + name.slice(1).toLowerCase() : "";
@@ -281,6 +281,10 @@ const [step, setStep] = useState("welcome");
           doorStatusUrl: row.door_status_req || "",
           relayOnUrl: row.relay_on_req || "",
           relayStatusUrl: row.relay_status_req || "",
+          lcdRoomUrl: row.LCD_room_req || "",
+          lcdFlashUrl: row.LCD_flash_req || "",
+          lcdOffUrl:   row.LCD_off_req || "",
+
         });
 
         try {
@@ -424,31 +428,49 @@ const [step, setStep] = useState("welcome");
       const doorResp = await fetchWithTimeout(data.doorOnUrl, 10000);
       setDoorResponse(doorResp);
 
-      if (isRelayOnSuccess(doorResp) && data?.doorStatusUrl) {
-        try {
-          await new Promise(res => setTimeout(res, 200));
-          const statusResp = await fetchWithTimeout(data.doorStatusUrl, 8000);
-const limit = parseLimitSwitch(statusResp);
-console.log("[pickup] door limit switch =", limit, "raw:", statusResp);
+     if (isRelayOnSuccess(doorResp) && data?.doorStatusUrl) {
+  try {
+    // brief pause then ask the machine for the door status
+    await new Promise(res => setTimeout(res, 200));
+    const statusResp = await fetchWithTimeout(data.doorStatusUrl, 8000);
+    const limit = parseLimitSwitch(statusResp);
+    console.log("[pickup] door limit switch =", limit, "raw:", statusResp);
 
-      
-          if (limit === "OFF") {
-            setDoorResponse({ door: doorResp, statusText: extractStatusText(statusResp) });
-            setStep("releaseKey");
-          } else if (limit === "ON") {
-            setDoorResponse({ door: doorResp, statusText: extractStatusText(statusResp) });
-            setApiError("Door cant open please check if something block the door");
-          } else {
-            setDoorResponse({ door: doorResp, statusText: extractStatusText(statusResp) });
-            setApiError("Unexpected door status. Please try again.");
-          }
+    if (limit === "OFF") {
+      // Door confirmed OPEN
+      setDoorResponse({ door: doorResp, statusText: extractStatusText(statusResp) });
+
+      // Show room/slot on LCD now that door status is confirmed
+      if (data?.lcdRoomUrl) {
+        try {
+          await fetchWithTimeout(data.lcdRoomUrl, 8000);
+          console.log("[pickup] LCD_room_req OK");
         } catch (e) {
-          // @ts-ignore
-          if (e.code === "TIMEOUT") setApiError("machine are offline Please check if machine connected to power or call support");
-          else setApiError(`Door status error: ${e.message}`);
+          console.warn("[pickup] LCD_room_req failed:", e);
         }
-        return;
       }
+
+      setStep("releaseKey");
+    } else if (limit === "ON") {
+      // Door reports it didn't open
+      setDoorResponse({ door: doorResp, statusText: extractStatusText(statusResp) });
+      setApiError("Door cant open please check if something block the door");
+    } else {
+      // Unknown status text
+      setDoorResponse({ door: doorResp, statusText: extractStatusText(statusResp) });
+      setApiError("Unexpected door status. Please try again.");
+    }
+  } catch (e) {
+    // @ts-ignore
+    if (e.code === "TIMEOUT") {
+      setApiError("machine are offline Please check if machine connected to power or call support");
+    } else {
+      setApiError(`Door status error: ${e.message}`);
+    }
+  }
+  return;
+}
+
 
       setApiError("machine are offline Please check if machine connected to power or call support");
     } catch (error) {
@@ -461,13 +483,23 @@ console.log("[pickup] door limit switch =", limit, "raw:", statusResp);
     }
   }
 
- async function handleReleaseKey() {
+async function handleReleaseKey() {
   setApiLoading(true);
   setApiError(null);
   console.log("[pickup] handleReleaseKey start");
 
   try {
     if (!data?.relayOnUrl) throw new Error("Missing relay_on_req URL");
+
+    // Flash LCD just before firing the relay to highlight the slot
+    if (data?.lcdFlashUrl) {
+      try {
+        console.log("[pickup] firing LCD_flash_req", data.lcdFlashUrl);
+        await fetchWithTimeout(data.lcdFlashUrl, 8000);
+      } catch (e) {
+        console.warn("[pickup] LCD_flash_req failed:", e);
+      }
+    }
 
     const relayResp = await fetchWithTimeout(data.relayOnUrl, 10000);
     console.log("[pickup] relay ON response =", relayResp);
@@ -488,6 +520,16 @@ console.log("[pickup] door limit switch =", limit, "raw:", statusResp);
 
     if (respText.includes("LIMIT") && respText.includes(":OFF")) {
       setApiError("");
+
+      // Turn LCD off after the slot action is confirmed finished
+      if (data?.lcdOffUrl) {
+        try {
+          console.log("[pickup] firing LCD_off_req", data.lcdOffUrl);
+          await fetchWithTimeout(data.lcdOffUrl, 8000);
+        } catch (e) {
+          console.warn("[pickup] LCD_off_req failed:", e);
+        }
+      }
 
       // 1) Mark DB state (invalidate link, mark key out, clear slot)
       try {
@@ -553,6 +595,7 @@ console.log("[pickup] door limit switch =", limit, "raw:", statusResp);
     setApiLoading(false);
   }
 }
+
 
 
   if (loading) {
