@@ -60,7 +60,7 @@ const startTs = isoNoTZ(now);
 // give 10 minutes of validity so timestamp check doesn't fail if
 // Netlify time != Pi local time
 const in10min = new Date(now.getTime() + 10 * 60 * 1000);
-const expTs = isoNoTZ(in10min);
+const expTs = isoNoTZ(in1000min);
 
 const cmd = `PI:REFRESH_WHITELIST|machine=${dashboardMachineId}|start=${startTs}|exp=${expTs}`;
 
