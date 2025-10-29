@@ -53,17 +53,19 @@ export async function POST(request, context) {
     );
   }
 
-  // 2. Build whitelist refresh command
-  const now = new Date();
-  const startTs = isoNoTZ(now);
+// 2. Build whitelist refresh command
+const now = new Date();
+const startTs = isoNoTZ(now);
 
-  const in2min = new Date(now.getTime() + 2 * 60 * 1000);
-  const expTs = isoNoTZ(in2min);
+// give 10 minutes of validity so timestamp check doesn't fail if
+// Netlify time != Pi local time
+const in10min = new Date(now.getTime() + 10 * 60 * 1000);
+const expTs = isoNoTZ(in10min);
 
-  const cmd = `PI:REFRESH_WHITELIST|machine=${dashboardMachineId}|start=${startTs}|exp=${expTs}`;
+const cmd = `PI:REFRESH_WHITELIST|machine=${dashboardMachineId}|start=${startTs}|exp=${expTs}`;
 
-  // 3. Sign it with HMAC so Pi accepts it
-  const sig = buildSignature(cmd);
+// 3. Sign it with HMAC so Pi accepts it
+const sig = buildSignature(cmd);
 
   // 4. Send it to the Pi /action endpoint with timeout
   const url = `${endpoint}/action?cmd=${encodeURIComponent(
