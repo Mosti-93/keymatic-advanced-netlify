@@ -18,6 +18,10 @@ export default function CreateMachinePage() {
   const [editMode, setEditMode] = useState(false);
   const [editingMachineId, setEditingMachineId] = useState(null);
 
+  // Track refresh status per machine (for the refresh/whitelist sync)
+  // Example: { A01: { text: 'Refresh started', color: 'green' }, ABC: { text:'Error', color:'red' } }
+  const [refreshStatus, setRefreshStatus] = useState({});
+
   // Table controls (Owner Panel–style)
   const [tableFilter, setTableFilter] = useState('');
   const [sortField, setSortField] = useState('machine_id'); // machine_id | machine_name | location | machine_address | capacity
@@ -121,6 +125,45 @@ export default function CreateMachinePage() {
     } else {
       setMessage('Machine deleted successfully.');
       fetchMachines();
+    }
+  };
+
+  // Trigger a refresh for the given machine by calling the secure API route
+  const handleRefresh = async (machineId) => {
+    // Immediately indicate refresh has started
+    setRefreshStatus(prev => ({
+      ...prev,
+      [machineId]: { text: 'Refreshing…', color: 'gray' },
+    }));
+    try {
+      const res = await fetch(`/api/machines/${machineId}/refresh-keys`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // error from backend or Pi
+        setRefreshStatus(prev => ({
+          ...prev,
+          [machineId]: {
+            text: data?.error ? `Error: ${data.error}` : `Error ${res.status}`,
+            color: 'red'
+          },
+        }));
+        return;
+      }
+      // success from Pi (e.g. { status: 'refresh started' })
+      const msg = data?.status || 'Refresh started';
+      setRefreshStatus(prev => ({
+        ...prev,
+        [machineId]: { text: msg, color: 'green' },
+      }));
+    } catch (err) {
+      setRefreshStatus(prev => ({
+        ...prev,
+        [machineId]: { text: 'Network error', color: 'red' },
+      }));
     }
   };
 
@@ -318,6 +361,10 @@ export default function CreateMachinePage() {
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
                     <SortLabel field="capacity">Capacity</SortLabel>
                   </th>
+                {/* Status column */}
+                <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
+                    Status
+                </th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-right">
                     Actions
                   </th>
@@ -331,8 +378,30 @@ export default function CreateMachinePage() {
                     <td className="px-4 py-3 border border-gray-300">{m.location}</td>
                     <td className="px-4 py-3 border border-gray-300">{m.machine_address || ''}</td>
                     <td className="px-4 py-3 border border-gray-300">{m.capacity}</td>
+
+                    {/* Status cell */}
+                    <td className="px-4 py-3 border border-gray-300">
+                      {(() => {
+                        const s = refreshStatus[m.machine_id] || { text: 'Idle', color: 'gray' };
+                        const colorClass =
+                          s.color === 'green'
+                            ? 'text-green-600 font-medium'
+                            : s.color === 'red'
+                            ? 'text-red-600 font-medium'
+                            : 'text-gray-500';
+                        return <span className={colorClass}>{s.text}</span>;
+                      })()}
+                    </td>
+
                     <td className="px-4 py-3 border border-gray-300 text-right">
                       <div className="inline-flex gap-2">
+                        {/* Refresh button */}
+                        <button
+                          onClick={() => handleRefresh(m.machine_id)}
+                          className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700"
+                        >
+                          Refresh
+                        </button>
                         <button
                           onClick={() => handleEdit(m)}
                           className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
@@ -351,7 +420,8 @@ export default function CreateMachinePage() {
                 ))}
                 {visibleMachines.length === 0 && (
                   <tr>
-                    <td className="px-6 py-4 text-sm text-gray-500" colSpan={6}>No machines found.</td>
+                    {/* Adjust colSpan to 7 because we added a Status column */}
+                    <td className="px-6 py-4 text-sm text-gray-500" colSpan={7}>No machines found.</td>
                   </tr>
                 )}
               </tbody>
