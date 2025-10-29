@@ -57,11 +57,11 @@ export async function POST(request, context) {
 const now = new Date();
 const startTs = isoNoTZ(now);
 
-// give 10 minutes of validity so timestamp check doesn't fail if
-// Netlify time != Pi local time
-const in10min = new Date(now.getTime() + 10 * 60 * 1000);
-const expTs = isoNoTZ(in1000min);
+// make it valid for, say, 24 hours instead of 10 minutes
+const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+const expTs = isoNoTZ(in24h);
 
+// then:
 const cmd = `PI:REFRESH_WHITELIST|machine=${dashboardMachineId}|start=${startTs}|exp=${expTs}`;
 
 // 3. Sign it with HMAC so Pi accepts it
