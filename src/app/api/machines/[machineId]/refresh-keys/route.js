@@ -1,15 +1,15 @@
 import crypto from "crypto";
 
-// 1. Map dashboard machine IDs (like "A12") to the actual Pi URL/IP+port.
-//    EDIT THIS to match your real Pi address/port.
-const MACHINE_CONFIG = {
-  A12: "https://api-a12.myotp.site", // change to your Pi IP for A12
-  A01: "https://api-a12.myotp.site", // if you only have one Pi now, you can point both to same IP
-  // Add more entries if you have more machines:
-  // A02: "http://192.168.1.50:5000",
-};
+// Resolve which Pi URL we should talk to for a given machine ID
+function getMachineEndpoint(machineId) {
+  if (machineId === "A12") return process.env.MACHINE_A12_URL;
+  if (machineId === "A01") return process.env.MACHINE_A01_URL;
+  // Add more machines here later if needed:
+  // if (machineId === "A02") return process.env.MACHINE_A02_URL;
+  return undefined;
+}
 
-// 2. Helper to format timestamps like "2025-10-29T17:48:48"
+// Make a timestamp string like "2025-10-29T18:05:43"
 function isoNoTZ(dateObj) {
   const pad = (n) => String(n).padStart(2, "0");
   const Y = dateObj.getFullYear();
@@ -21,31 +21,28 @@ function isoNoTZ(dateObj) {
   return `${Y}-${M}-${D}T${h}:${m}:${s}`;
 }
 
-// 3. HMAC generator
-//    This MUST match what the Pi expects.
-//    SECRET_KEY must match the Pi's SECRET_KEY (without the leading b and quotes).
-//    Example from Pi: SECRET_KEY = b"mysupersecretkey"
+// Build HMAC signature the exact same way the Pi validates it
 function buildSignature(cmd) {
-  const SECRET_KEY = "mysupersecretkey";
+  const SECRET_KEY = process.env.SIGNING_SECRET;
+  if (!SECRET_KEY) {
+    throw new Error("SIGNING_SECRET is missing in env");
+  }
+
+  // You used base64 earlier and it worked (20jj+TqK...= etc. looked like base64),
+  // so we'll keep base64 here.
   return crypto
     .createHmac("sha256", SECRET_KEY)
     .update(cmd, "utf8")
     .digest("base64");
 }
 
-
-
-
-// 4. Your Next.js version requires awaiting the context to get params.
+// Your Next.js version requires "await context" to read params
 export async function POST(request, context) {
-  // context is like a promise that resolves to { params: { machineId: "A12" } }
   const { params } = await context;
+  const dashboardMachineId = params.machineId; // e.g. "A12"
 
-  // Example: /api/machines/A12/refresh-keys  ->  machineId === "A12"
-  const dashboardMachineId = params.machineId;
-
-  // A. Pick which Pi to talk to
-  const endpoint = MACHINE_CONFIG[dashboardMachineId];
+  // 1. Pick which Pi to talk to
+  const endpoint = getMachineEndpoint(dashboardMachineId);
   if (!endpoint) {
     return new Response(
       JSON.stringify({
@@ -56,11 +53,7 @@ export async function POST(request, context) {
     );
   }
 
-  // B. Build whitelist refresh command for Pi
-  //    Pi FastAPI /action expects something like:
-  //    PI:REFRESH_WHITELIST|machine=A12|start=...|exp=...
-  //
-  // We'll allow 2 minutes validity window.
+  // 2. Build whitelist refresh command
   const now = new Date();
   const startTs = isoNoTZ(now);
 
@@ -69,10 +62,10 @@ export async function POST(request, context) {
 
   const cmd = `PI:REFRESH_WHITELIST|machine=${dashboardMachineId}|start=${startTs}|exp=${expTs}`;
 
-  // C. Build signature that Pi will verify
+  // 3. Sign it with HMAC so Pi accepts it
   const sig = buildSignature(cmd);
 
-  // D. Send GET to Pi /action with 5s timeout
+  // 4. Send it to the Pi /action endpoint with timeout
   const url = `${endpoint}/action?cmd=${encodeURIComponent(
     cmd
   )}&sig=${encodeURIComponent(sig)}`;
@@ -91,10 +84,10 @@ export async function POST(request, context) {
     clearTimeout(timer);
 
     piStatus = piResp.status;
-    piJson = await piResp.json(); // FastAPI dict -> JSON
+    piJson = await piResp.json();
   } catch (err) {
     clearTimeout(timer);
-    // Can't reach Pi at all
+
     return new Response(
       JSON.stringify({
         ok: false,
@@ -106,7 +99,7 @@ export async function POST(request, context) {
     );
   }
 
-  // E. Pi responded but said no
+  // 5. Pi responded but said no (wrong machine, etc.)
   if (piStatus >= 400) {
     return new Response(
       JSON.stringify({
@@ -119,7 +112,7 @@ export async function POST(request, context) {
     );
   }
 
-  // F. Success
+  // 6. Success
   return new Response(
     JSON.stringify({
       ok: true,
