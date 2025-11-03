@@ -18,7 +18,7 @@ export default function CreateMachinePage() {
   const [editMode, setEditMode] = useState(false);
   const [editingMachineId, setEditingMachineId] = useState(null);
 
-  // Track refresh status per machine (for the refresh/whitelist sync)
+  // Track refresh status per machine
   // Example: { A01: { text: 'Refresh started', color: 'green' }, ABC: { text:'Error', color:'red' } }
   const [refreshStatus, setRefreshStatus] = useState({});
 
@@ -26,6 +26,10 @@ export default function CreateMachinePage() {
   const [tableFilter, setTableFilter] = useState('');
   const [sortField, setSortField] = useState('machine_id'); // machine_id | machine_name | location | machine_address | capacity
   const [sortDir, setSortDir] = useState('asc');
+
+  // Track number of whitelist registrations per machine (keys already registered)
+  // keyed by machine_id, e.g. { A12: 2 }
+  const [regCounts, setRegCounts] = useState({});
 
   const isValidMachineId = (id) => /^[A-D0-9]{3}$/.test(id);
 
@@ -39,6 +43,67 @@ export default function CreateMachinePage() {
       setMachines(data || []);
     }
   };
+
+  // After we have the list of machines, fetch how many UIDs are registered
+  // in machine_whitelist for each machine.
+  // After we have the list of machines, fetch how many active UIDs
+  // are registered in key_slot_presence for each machine.
+  useEffect(() => {
+    const fetchRegistrationCounts = async () => {
+      const counts = {};
+
+      if (!machines || machines.length === 0) {
+        setRegCounts({});
+        return;
+      }
+
+      await Promise.all(
+        machines.map(async (m) => {
+          if (!m || !m.machine_id) return;
+
+          // Some rows in your DB have "A12\n", so we trim just in case.
+          const mid = m.machine_id.trim();
+
+          try {
+            // We ask Supabase:
+            //  - from key_slot_presence
+            //  - only rows for this machine_id
+            //  - only rows where UID is NOT null
+            //  - we don't need the row data, only the count
+            //
+            // NOTE: .not('UID','is',null) means "UID IS NOT NULL"
+            const { count, error } = await supabase
+              .from('key_slot_presence')
+              .select('UID', { count: 'exact', head: true })
+              .eq('machine_id', mid)
+              .not('UID', 'is', null);
+
+            if (error) {
+              console.error(
+                'Error fetching UID count for machine',
+                mid,
+                error
+              );
+              counts[mid] = 0;
+            } else {
+              counts[mid] = typeof count === 'number' ? count : 0;
+            }
+          } catch (err) {
+            console.error(
+              'Unexpected error fetching UID count for machine',
+              mid,
+              err
+            );
+            counts[mid] = 0;
+          }
+        })
+      );
+
+      setRegCounts(counts);
+    };
+
+    fetchRegistrationCounts();
+  }, [machines]);
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -135,6 +200,7 @@ export default function CreateMachinePage() {
       ...prev,
       [machineId]: { text: 'Refreshing…', color: 'gray' },
     }));
+
     try {
       const res = await fetch(`/api/machines/${machineId}/refresh-keys`, {
         method: 'POST',
@@ -142,6 +208,7 @@ export default function CreateMachinePage() {
         body: JSON.stringify({ confirm: true }),
       });
       const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
         // error from backend or Pi
         setRefreshStatus(prev => ({
@@ -153,12 +220,16 @@ export default function CreateMachinePage() {
         }));
         return;
       }
+
       // success from Pi (e.g. { status: 'refresh started' })
       const msg = data?.status || 'Refresh started';
       setRefreshStatus(prev => ({
         ...prev,
         [machineId]: { text: msg, color: 'green' },
       }));
+
+      // important: reload machines (and therefore regCounts)
+      await fetchMachines();
     } catch (err) {
       setRefreshStatus(prev => ({
         ...prev,
@@ -361,10 +432,10 @@ export default function CreateMachinePage() {
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
                     <SortLabel field="capacity">Capacity</SortLabel>
                   </th>
-                {/* Status column */}
-                <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
+                  {/* Status column */}
+                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
                     Status
-                </th>
+                  </th>
                   <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-right">
                     Actions
                   </th>
@@ -377,7 +448,36 @@ export default function CreateMachinePage() {
                     <td className="px-4 py-3 border border-gray-300">{m["Machine name"]}</td>
                     <td className="px-4 py-3 border border-gray-300">{m.location}</td>
                     <td className="px-4 py-3 border border-gray-300">{m.machine_address || ''}</td>
-                    <td className="px-4 py-3 border border-gray-300">{m.capacity}</td>
+
+                    {/* Capacity cell: show registered whitelist keys over total capacity */}
+               <td className="px-4 py-3 border border-gray-300">
+  {(() => {
+    // Be careful with "A12\n" from DB → trim it
+    const mid = (m.machine_id || '').trim();
+    const reg = regCounts[mid];
+    const cap = m.capacity;
+
+    // If we know how many UIDs are registered AND we know capacity,
+    // show "registered/capacity", for example "2/18".
+    if (
+      reg !== undefined &&
+      reg !== null &&
+      cap !== undefined &&
+      cap !== null &&
+      cap !== ''
+    ) {
+      return `${reg}/${cap}`;
+    }
+
+    // Fallback: just show capacity if we don't have reg count yet.
+    if (cap !== undefined && cap !== null) {
+      return cap;
+    }
+
+    return '';
+  })()}
+</td>
+
 
                     {/* Status cell */}
                     <td className="px-4 py-3 border border-gray-300">
@@ -420,7 +520,7 @@ export default function CreateMachinePage() {
                 ))}
                 {visibleMachines.length === 0 && (
                   <tr>
-                    {/* Adjust colSpan to 7 because we added a Status column */}
+                    {/* colSpan is 7 because we have Status column now */}
                     <td className="px-6 py-4 text-sm text-gray-500" colSpan={7}>No machines found.</td>
                   </tr>
                 )}

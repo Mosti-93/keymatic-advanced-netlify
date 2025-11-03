@@ -4,8 +4,8 @@ import { supabase } from "@/utils/supabaseClient";
 
 export default function AddClientPage() {
   const [form, setForm] = useState({
-  firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: '', platform: ''
-});
+    firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: '', platform: ''
+  });
 
   const [clients, setClients] = useState([]);
   const [keys, setKeys] = useState([]);
@@ -23,19 +23,18 @@ export default function AddClientPage() {
   const [slotPresence, setSlotPresence] = useState([]); // NEW
 
   const platforms = [
-  "Airbnb",
-  "Booking.com",
-  "Vrbo",
-  "Vacasa",
-  "FlipKey",
-  "Whimstay",
-  "HomeExchange",
-  "Hipcamp",
-  "Misterb&b",
-  "ThirdHome",
-  "Fairbnb & similar"
-];
-
+    "Airbnb",
+    "Booking.com",
+    "Vrbo",
+    "Vacasa",
+    "FlipKey",
+    "Whimstay",
+    "HomeExchange",
+    "Hipcamp",
+    "Misterb&b",
+    "ThirdHome",
+    "Fairbnb & similar"
+  ];
 
   useEffect(() => {
     fetchClients();
@@ -45,8 +44,12 @@ export default function AddClientPage() {
   }, []);
 
   const fetchClients = async () => {
-    const { data, error } = await supabase.from('clients').select('*');
-    if (!error) setClients(data);
+    const { data, error } = await supabase
+      .from('clients')
+      .select('*')
+      .order('check_in', { ascending: false })
+      .order('id', { ascending: false });
+    if (!error) setClients(data || []);
   };
 
   // includes slot_number now
@@ -58,7 +61,8 @@ export default function AddClientPage() {
   };
 
   const fetchOwners = async () => {
-    const { data, error } = await supabase.from('users')
+    const { data, error } = await supabase
+      .from('users')
       .select('id, name, email, phone')
       .eq('role', 'owner');
     if (!error) setOwners(data || []);
@@ -71,13 +75,15 @@ export default function AddClientPage() {
     setSlotPresence(data || []);
   };
 
+  // MATCHED to your other file:
+  // - If checkOut is date-only, append T11:00:00
   const handleChange = (e) => {
     const { name, value } = e.target;
     if (name === "checkOut" && value) {
-      const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+      const hasTime = value.includes("T");
       setForm((prev) => ({
         ...prev,
-        [name]: isDateOnly ? `${value}T11:00:00` : value,
+        [name]: hasTime ? value : `${value}T11:00:00`,
       }));
     } else {
       setForm((prev) => ({
@@ -90,9 +96,12 @@ export default function AddClientPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setMessage('');
+
     const { firstName, lastName, email, phone, keyId, checkIn, checkOut } = form;
     const owner_id = selectedOwner?.id || null;
 
+    // MATCHED to your other file:
+    // - Pass check_in/check_out AS-IS (no ISO normalization)
     let result;
     if (editMode) {
       result = await supabase.from('clients').update({
@@ -103,9 +112,8 @@ export default function AddClientPage() {
         key_id: keyId,
         check_in: checkIn,
         check_out: checkOut,
-        owner_id
-        , platform: form.platform
-
+        owner_id,
+        platform: form.platform
       }).eq('id', editingId);
     } else {
       result = await supabase.from('clients').insert([{
@@ -116,9 +124,8 @@ export default function AddClientPage() {
         key_id: keyId,
         check_in: checkIn,
         check_out: checkOut,
-        owner_id
-        , platform: form.platform
-
+        owner_id,
+        platform: form.platform
       }]);
     }
 
@@ -133,8 +140,7 @@ export default function AddClientPage() {
       }
     } else {
       setMessage(editMode ? '✅ Client updated.' : '✅ Client saved!');
-     setForm({ firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: '', platform: '' });
-
+      setForm({ firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: '', platform: '' });
       setSelectedOwner(null);
       setOwnerSearch('');
       setEditMode(false);
@@ -151,18 +157,17 @@ export default function AddClientPage() {
       firstName = nameParts[0] || '';
       lastName = nameParts.slice(1).join(' ') || '';
     }
-    
-setForm({
-  firstName,
-  lastName,
-  email: client.email || '',
-  phone: client.phone || '',
-  keyId: client.key_id || '',
-  checkIn: client.check_in || '',
-  checkOut: client.check_out || '',
-  platform: client.platform || ''
-});
 
+    setForm({
+      firstName,
+      lastName,
+      email: client.email || '',
+      phone: client.phone || '',
+      keyId: client.key_id || '',
+      checkIn: client.check_in || '',
+      checkOut: client.check_out || '',
+      platform: client.platform || ''
+    });
 
     const owner = owners.find(o => o.id === client.owner_id) || null;
     setSelectedOwner(owner);
@@ -181,118 +186,86 @@ setForm({
     }
   };
 
-const handleStartPickup = async (client) => {
-  try {
-    // Validate client data
-    if (!client?.id) {
-      throw new Error("Invalid client data");
-    }
+  const handleStartPickup = async (client) => {
+    try {
+      if (!client?.id) throw new Error("Invalid client data");
 
-    // Resolve first/last names
-    const parsedFirst = client.first_name || 
-      (client.name ? client.name.trim().split(' ')[0] : '') || '';
-    const parsedLast = client.last_name || 
-      (client.name ? client.name.trim().split(' ').slice(1).join(' ') : '') || '';
+      const parsedFirst = client.first_name ||
+        (client.name ? client.name.trim().split(' ')[0] : '') || '';
+      const parsedLast = client.last_name ||
+        (client.name ? client.name.trim().split(' ').slice(1).join(' ') : '') || '';
 
-    // Find the key
-    const key = keys.find(k => k.uuid === client.key_id);
-    if (!key) {
-      throw new Error("No key assigned to this client");
-    }
-    if (!key?.UID) {
-      throw new Error("Key has no UID assigned");
-    }
+      const key = keys.find(k => k.uuid === client.key_id);
+      if (!key) throw new Error("No key assigned to this client");
+      if (!key?.UID) throw new Error("Key has no UID assigned");
 
-    // Check key presence in machine
-    const { data: slot, error: slotError } = await supabase
-      .from('key_slot_presence')
-      .select('*')
-      .eq('UID', key.UID)
-      .maybeSingle();
+      // Check key presence in machine
+      const { data: slot, error: slotError } = await supabase
+        .from('key_slot_presence')
+        .select('*')
+        .eq('UID', key.UID)
+        .maybeSingle();
 
-    if (slotError) {
-      throw new Error(`Failed to check key presence: ${slotError.message}`);
-    }
-    if (!slot) {
-      throw new Error("Key not detected in machine - please verify physical key presence");
-    }
+      if (slotError) throw new Error(`Failed to check key presence: ${slotError.message}`);
+      if (!slot) throw new Error("Key not detected in machine - please verify physical key presence");
 
-    // Determine slot number with fallbacks
-    let slot_number = slot?.slot_number || key?.slot_number;
-    if (!slot_number && key?.UID && key?.machine_id) {
-      const spSlot = slotPresence.find(
-        sp => sp.UID === key.UID && String(sp.machine_id) === String(key.machine_id)
-      );
-      slot_number = spSlot?.slot_number || "";
-    }
-
-    if (!slot_number) {
-      throw new Error("Could not determine slot number for the key");
-    }
-
-    // Prepare payload
-    const owner = owners.find(o => o.id === key?.owner_id) || {};
-    const pickupPayload = {
-      clientId: client.id,
-      clientEmail: client.email || "",
-      clientFirstName: parsedFirst,
-      clientLastName: parsedLast,
-      clientName: `${parsedFirst} ${parsedLast}`.trim(),
-      ownerName: owner.name || "",
-      keyId: client.key_id,
-      roomNo: key.room_number || "",
-      UID: key.UID || "",
-      slot_number,
-      checkIn: client.check_in,
-      checkOut: client.check_out,
-      machineId: key.machine_id || "",
-    };
-
-    setMessage("⏳ Starting pickup process...");
-
-    // API call with comprehensive error handling
-    const res = await fetch("/api/pickup", {
-      method: "POST",
-      headers: { 
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(pickupPayload),
-    });
-
-    // Handle HTTP errors
-    if (!res.ok) {
-      let errorMsg = `Server error: ${res.status}`;
-      try {
-        const errorData = await res.json();
-        errorMsg = errorData.error || errorData.message || errorMsg;
-      } catch (e) {
-        console.warn("Could not parse error response", e);
+      // Determine slot number with fallbacks
+      let slot_number = slot?.slot_number || key?.slot_number;
+      if (!slot_number && key?.UID && key?.machine_id) {
+        const spSlot = slotPresence.find(
+          sp => sp.UID === key.UID && String(sp.machine_id) === String(key.machine_id)
+        );
+        slot_number = spSlot?.slot_number || "";
       }
-      throw new Error(errorMsg);
+      if (!slot_number) throw new Error("Could not determine slot number for the key");
+
+      const owner = owners.find(o => o.id === key?.owner_id) || {};
+      const pickupPayload = {
+        clientId: client.id,
+        clientEmail: client.email || "",
+        clientFirstName: parsedFirst,
+        clientLastName: parsedLast,
+        clientName: `${parsedFirst} ${parsedLast}`.trim(),
+        ownerName: owner.name || "",
+        keyId: client.key_id,
+        roomNo: key.room_number || "",
+        UID: key.UID || "",
+        slot_number,
+        checkIn: client.check_in,
+        checkOut: client.check_out,
+        machineId: key.machine_id || "",
+      };
+
+      setMessage("⏳ Starting pickup process...");
+
+      const res = await fetch("/api/pickup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pickupPayload),
+      });
+
+      if (!res.ok) {
+        let errorMsg = `Server error: ${res.status}`;
+        try {
+          const errorData = await res.json();
+          errorMsg = errorData.error || errorData.message || errorMsg;
+        } catch {}
+        throw new Error(errorMsg);
+      }
+
+      const data = await res.json();
+      if (!data?.success) throw new Error(data?.error || "Pickup failed without error details");
+
+      setMessage("✅ Pickup initiated successfully!");
+      fetchClients();
+    } catch (error) {
+      console.error("Pickup error:", error);
+      setMessage(`❌ ${error.message}`);
+      if (error.name === "TypeError" && error.message.includes("Failed to fetch")) {
+        setMessage("❌ Network error - could not connect to server");
+      }
     }
-
-    // Handle successful response
-    const data = await res.json();
-    if (!data?.success) {
-      throw new Error(data?.error || "Pickup failed without error details");
-    }
-
-    // Success case
-    setMessage("✅ Pickup initiated successfully!");
-    fetchClients(); // Refresh client list
-
-  } catch (error) {
-    console.error("Pickup error:", error);
-    setMessage(`❌ ${error.message}`);
-    
-    // Special handling for network errors
-    if (error.name === "TypeError" && error.message.includes("Failed to fetch")) {
-      setMessage("❌ Network error - could not connect to server");
-    }
-  }
-};
-
-  // --------------------------------------------------------
+  };
 
   // Helper: get key info for a client
   const getKeyInfo = (client) => {
@@ -312,12 +285,18 @@ const handleStartPickup = async (client) => {
     return '';
   }
 
+  // MATCHED to your other file:
+  // - today = new Date().toISOString().split('T')[0] (UTC-based string)
+  // - 'current': ci <= today && co >= today (no extra guards)
   const filterClients = () => {
-    const today = new Date().toISOString().slice(0,10);
+    const today = new Date().toISOString().split('T')[0];
+
     let filtered = clients.filter(client => {
-      if (filter === 'current') return client.check_in <= today && client.check_out >= today;
-      if (filter === 'coming') return client.check_in > today;
-      if (filter === 'past') return client.check_out < today;
+      const ci = (client.check_in || '').slice(0, 10);
+      const co = (client.check_out || '').slice(0, 10);
+      if (filter === 'current') return ci <= today && co >= today;
+      if (filter === 'coming')  return ci > today;
+      if (filter === 'past')    return co < today;
       return true;
     });
 
@@ -330,9 +309,8 @@ const handleStartPickup = async (client) => {
         (client.phone || '').toLowerCase().includes(f) ||
         (client.check_in || '').toLowerCase().includes(f) ||
         (client.check_out || '').toLowerCase().includes(f) ||
-        getKeyInfo(client).toLowerCase().includes(f)
-        || (client.platform || '').toLowerCase().includes(f)
-
+        getKeyInfo(client).toLowerCase().includes(f) ||
+        (client.platform || '').toLowerCase().includes(f)
       );
     }
 
@@ -342,8 +320,8 @@ const handleStartPickup = async (client) => {
       full_name: client => ((client.first_name || '') + ' ' + (client.last_name || '')).toLowerCase(),
       key_info: client => getKeyInfo(client).toLowerCase(),
       email: client => (client.email || '').toLowerCase(),
-      phone: client => (client.phone || '').toLowerCase()
-      
+      phone: client => (client.phone || '').toLowerCase(),
+      platform: client => (client.platform || '').toLowerCase(),
     };
 
     if (sortField && sorters[sortField]) {
@@ -365,20 +343,33 @@ const handleStartPickup = async (client) => {
   };
 
   // Owner search handlers (unchanged)
-  const handleOwnerSearch = (e) => {
-    const value = e.target.value;
+  const handleOwnerSearch = async (e) => {
+    const value = e.target.value || '';
     setOwnerSearch(value);
     setSelectedOwner(null);
     setForm(prev => ({ ...prev, keyId: '' }));
-    if (value.length < 2) {
+
+    const q = value.trim();
+    if (q.length < 2) {
       setFilteredOwners([]);
       return;
     }
-    const matches = owners.filter(owner =>
-      (owner.name && owner.name.toLowerCase().includes(value.trim().toLowerCase())) ||
-      (owner.email && owner.email.toLowerCase().includes(value.trim().toLowerCase()))
-    );
-    setFilteredOwners(matches || []);
+
+    const like = `%${q}%`;
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, name, email, phone')
+      .eq('role', 'owner')
+      .or(`name.ilike.${like},email.ilike.${like}`)
+      .order('name', { ascending: true })
+      .limit(10);
+
+    if (error) {
+      console.error('[owners search] error:', error);
+      setFilteredOwners([]);
+      return;
+    }
+    setFilteredOwners(data || []);
   };
 
   const handleOwnerSelect = (owner) => {
@@ -388,7 +379,7 @@ const handleStartPickup = async (client) => {
     setForm(prev => ({ ...prev, keyId: '' }));
   };
 
-  // Helper for date/time display in the table
+  // Helper for date/time display in the table (keep as your current table rendering)
   function displayDateTime(val) {
     if (!val) return <span className="text-gray-400">-</span>;
     const dt = val.replace(' ', 'T');
@@ -495,53 +486,54 @@ const handleStartPickup = async (client) => {
                 </div>
               )}
             </div>
-            {/* Key Dropdown */}
-<div>
-  <label className="block text-sm font-medium text-gray-700">Room No / Key</label>
-  <select
-    name="keyId"
-    value={form.keyId}
-    onChange={handleChange}
-    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-    disabled={!selectedOwner && !editMode}
-    required
-  >
-    <option value="">Select key for owner</option>
-    {selectedOwner
-      ? keys
-          .filter(k => String(k.owner_id) === String(selectedOwner.id))
-          .map(k => (
-            <option key={k.uuid} value={k.uuid}>
-              {k.room_number} (UID: {k.UID || k.uuid})
-            </option>
-          ))
-      : keys.map(k => (
-          <option key={k.uuid} value={k.uuid}>
-            {k.room_number} (UID: {k.UID || k.uuid})
-          </option>
-        ))}
-  </select>
-</div>
 
-{/* Platform (sibling to Key, will render beside it in md:grid-cols-2) */}
-<div>
-  <label className="block text-sm font-medium text-gray-700">Platform</label>
-  <input
-    list="platform-options"
-    name="platform"
-    value={form.platform}
-    onChange={handleChange}
-    placeholder="Select or type platform"
-    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-    required
-  />
-  <datalist id="platform-options">
-    {platforms.map((p, idx) => (
-      <option key={idx} value={p} />
-    ))}
-    <option value="Other" />
-  </datalist>
-</div>
+            {/* Key Dropdown */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Room No / Key</label>
+              <select
+                name="keyId"
+                value={form.keyId}
+                onChange={handleChange}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+                disabled={!selectedOwner && !editMode}
+                required
+              >
+                <option value="">Select key for owner</option>
+                {selectedOwner
+                  ? keys
+                      .filter(k => String(k.owner_id) === String(selectedOwner.id))
+                      .map(k => (
+                        <option key={k.uuid} value={k.uuid}>
+                          {k.room_number} (UID: {k.UID || k.uuid})
+                        </option>
+                      ))
+                  : keys.map(k => (
+                      <option key={k.uuid} value={k.uuid}>
+                        {k.room_number} (UID: {k.UID || k.uuid})
+                      </option>
+                    ))}
+              </select>
+            </div>
+
+            {/* Platform */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Platform</label>
+              <input
+                list="platform-options"
+                name="platform"
+                value={form.platform}
+                onChange={handleChange}
+                placeholder="Select or type platform"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+                required
+              />
+              <datalist id="platform-options">
+                {platforms.map((p, idx) => (
+                  <option key={idx} value={p} />
+                ))}
+                <option value="Other" />
+              </datalist>
+            </div>
 
             {/* Check-in/Check-out SIDE BY SIDE */}
             <div className="flex gap-2 col-span-1 md:col-span-2">
@@ -566,6 +558,7 @@ const handleStartPickup = async (client) => {
                 />
               </div>
             </div>
+
             {/* Buttons */}
             <div className="md:col-span-2 flex gap-3">
               <button
@@ -579,7 +572,6 @@ const handleStartPickup = async (client) => {
                   type="button"
                   onClick={() => {
                     setForm({ firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: '', platform: '' });
-
                     setEditMode(false);
                     setEditingId(null);
                     setSelectedOwner(null);
@@ -652,14 +644,12 @@ const handleStartPickup = async (client) => {
                   >
                     ROOM / UID {sortField === 'key_info' && (sortDir === 'asc' ? '▲' : '▼')}
                   </th>
-                 <th
-  className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
-  onClick={() => handleSort('platform')}
->
-  PLATFORM {sortField === 'platform' && (sortDir === 'asc' ? '▲' : '▼')}
-</th>
-
-
+                  <th
+                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
+                    onClick={() => handleSort('platform')}
+                  >
+                    PLATFORM {sortField === 'platform' && (sortDir === 'asc' ? '▲' : '▼')}
+                  </th>
                   <th
                     className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left w-48 cursor-pointer"
                     onClick={() => handleSort('check_in')}
@@ -684,7 +674,6 @@ const handleStartPickup = async (client) => {
                   >
                     PHONE {sortField === 'phone' && (sortDir === 'asc' ? '▲' : '▼')}
                   </th>
-
                   <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-right">
                     ACTIONS
                   </th>
@@ -708,7 +697,6 @@ const handleStartPickup = async (client) => {
                     </td>
                     <td className="px-6 py-4 border border-gray-300">{getKeyInfo(client)}</td>
                     <td className="px-6 py-4 border border-gray-300">{client.platform || '-'}</td>
-
                     <td className="px-6 py-4 border border-gray-300 w-48">
                       <div>
                         {client.check_in?.slice(0, 10)}
@@ -723,8 +711,6 @@ const handleStartPickup = async (client) => {
                     </td>
                     <td className="px-6 py-3 border border-gray-300">{client.email}</td>
                     <td className="px-6 py-4 border border-gray-300">{client.phone}</td>
-                    
-
                     <td className="px-6 py-4 border border-gray-300">
                       <div className="flex flex-row gap-2 justify-end">
                         <button
