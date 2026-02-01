@@ -1,118 +1,262 @@
-'use client';
-import { useState } from "react";
+"use client";
+
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/utils/supabaseClient";
 
 export default function LoginPage() {
   const router = useRouter();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
   const [error, setError] = useState("");
-  const [showForgot, setShowForgot] = useState(false);
-  const [resetMsg, setResetMsg] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // Login handler
+  const [showForgot, setShowForgot] = useState(false);
+  const [resetMsg, setResetMsg] = useState("");
+
+  const [showResendVerify, setShowResendVerify] = useState(false);
+  const [resendMsg, setResendMsg] = useState("");
+
+  // ✅ NEW: show Sign up CTA when email is not registered
+  const [showSignupCta, setShowSignupCta] = useState(false);
+
+  const getOrigin = () => {
+    if (typeof window === "undefined") return "http://localhost:3000";
+    return window.location.origin;
+  };
+
+  const isErrorText = (txt) => {
+    const t = (txt || "").toLowerCase();
+    return (
+      t.includes("failed") ||
+      t.includes("error") ||
+      t.includes("cannot") ||
+      t.includes("can only") ||
+      t.includes("security purposes") ||
+      t.includes("not registered") ||
+      t.includes("incorrect") ||
+      t.includes("not confirmed")
+    );
+  };
+
+  const resetMsgClass = useMemo(() => {
+    if (!resetMsg) return "";
+    return isErrorText(resetMsg) ? "text-red-600" : "text-green-700";
+  }, [resetMsg]);
+
+  const resendMsgClass = useMemo(() => {
+    if (!resendMsg) return "";
+    return isErrorText(resendMsg) ? "text-red-600" : "text-green-700";
+  }, [resendMsg]);
+
+  const handleResendVerification = async () => {
+    setResendMsg("");
+    setError("");
+    setShowSignupCta(false);
+
+    const trimmedEmail = (email || "").trim().toLowerCase();
+    if (!trimmedEmail) {
+      setResendMsg("Please enter your email first.");
+      return;
+    }
+
+    try {
+      const emailRedirectTo = `${getOrigin()}/auth/callback`;
+
+      const { error: resendError } = await supabase.auth.resend({
+        type: "signup",
+        email: trimmedEmail,
+        options: { emailRedirectTo },
+      });
+
+      if (resendError) {
+        setResendMsg("Failed to resend verification email: " + resendError.message);
+      } else {
+        setResendMsg("Verification email sent. Please check inbox/spam.");
+      }
+    } catch (e) {
+      setResendMsg("Unexpected error while resending. Please try again.");
+    }
+  };
+
+  const checkEmailRegisteredInUsersTable = async (trimmedEmail) => {
+    const { data, error } = await supabase
+      .from("users")
+      .select("id")
+      .ilike("email", trimmedEmail)
+      .maybeSingle();
+
+    if (error) return { ok: false, registered: null, error };
+    return { ok: true, registered: !!data, error: null };
+  };
+
+  const SignupCta = () => (
+    <div className="mt-3 text-center">
+      <button
+        type="button"
+        onClick={() => router.push("/signup")}
+        className="px-4 py-2 bg-gray-900 text-white rounded-md hover:opacity-90 transition"
+      >
+        Sign up
+      </button>
+    </div>
+  );
+
   const handleLogin = async (e) => {
     e.preventDefault();
+    setSubmitting(true);
     setError("");
+    setResendMsg("");
+    setShowResendVerify(false);
+    setShowSignupCta(false);
+
     try {
-      const { error: loginError } = await supabase.auth.signInWithPassword({ email, password });
+      const trimmedEmail = (email || "").trim().toLowerCase();
+
+      const { data: authData, error: loginError } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password,
+      });
+
       if (loginError) {
-        setError(
-          loginError.message.toLowerCase().includes("not confirmed") ||
-          loginError.message.toLowerCase().includes("confirm your email")
-            ? "Your email is waiting for verification. Please check your inbox."
-            : loginError.message
-        );
+        const msg = (loginError.message || "Login failed.").toLowerCase();
+        const code = loginError.code || "";
+
+        const isNotConfirmed =
+          code === "email_not_confirmed" ||
+          msg.includes("email not confirmed") ||
+          msg.includes("not confirmed");
+
+        if (isNotConfirmed) {
+          setError("Email not confirmed. Please verify your email to login.");
+          setShowResendVerify(true);
+          return;
+        }
+
+        const isInvalidCreds = msg.includes("invalid login credentials");
+
+        if (isInvalidCreds) {
+          const check = await checkEmailRegisteredInUsersTable(trimmedEmail);
+
+          if (!check.ok) {
+            setError("Unable to verify your account right now. Please try again.");
+            return;
+          }
+
+          // ✅ CHANGED: Not registered → show message + signup button (NO auto redirect)
+          if (!check.registered) {
+            setError("This email is not registered. Please sign up.");
+            setShowSignupCta(true);
+            return;
+          }
+
+          // Registered but wrong password
+          setError("Incorrect password. Please try again or reset it.");
+          return;
+        }
+
+        setError(loginError.message || "Login failed.");
         return;
       }
 
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setError("Unexpected error: user not found");
+      const user = authData?.user;
+      if (!user?.id) {
+        setError("Unexpected error: user not found after login.");
         return;
       }
 
-      await supabase
-        .from('users')
-        .update({ last_login: user.last_sign_in_at })
-        .eq('id', user.id);
+      // Update last_login (do not block login if this fails)
+      await supabase.from("users").update({ last_login: new Date().toISOString() }).eq("id", user.id);
 
+      // Fetch profile
       const { data: profile, error: profileError } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', user.id)
-        .single();
+        .from("users")
+        .select("id, role")
+        .eq("id", user.id)
+        .maybeSingle();
 
-      if (profileError || !profile) {
-        setError("Your user is under review. Once approved, you will receive an email.");
+      if (profileError) {
+        setError(`Failed to load user profile: ${profileError.message}`);
         return;
       }
 
-      const role = profile?.role?.trim().toLowerCase();
+      if (!profile) {
+        setError("Profile not found for this account.");
+        return;
+      }
+
+      const role = (profile.role || "").trim().toLowerCase();
       if (!role) {
-        setError("No role found. Please contact support.");
+        setError("No role found for this user.");
         return;
       }
 
       localStorage.setItem("role", role);
       localStorage.setItem("userId", user.id);
 
-      switch (role) {
-        case "admin":
-          router.push("/admin");
-          break;
-        case "owner":
-          router.push("/owner-panel");
-          break;
-        case "client":
-          router.push("/client-panel");
-          break;
-        default:
-          router.push("/");
-      }
-    } catch (err) {
+      if (role === "admin") router.push("/admin");
+      else if (role === "owner") router.push("/owner-panel");
+      else if (role === "client") router.push("/client-panel");
+      else router.push("/");
+    } catch (e) {
       setError("An unexpected error occurred. Please try again.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  // Forgot password handler
   const handleForgot = async (e) => {
     e.preventDefault();
     setResetMsg("");
+    setError("");
     setSubmitting(true);
+    setShowSignupCta(false);
 
-    // Check if email exists in users table
-    const { data: user, error: userError } = await supabase
-      .from("users")
-      .select("id")
-      .eq("email", email)
-      .single();
+    try {
+      const trimmedEmail = (email || "").trim().toLowerCase();
+      if (!trimmedEmail) {
+        setResetMsg("Failed to send password reset email: Please enter your email first.");
+        return;
+      }
 
-    if (userError || !user) {
-      setResetMsg("This email is not registered.");
+      // ✅ NEW: Block reset for unregistered email (based on your users table)
+      const check = await checkEmailRegisteredInUsersTable(trimmedEmail);
+      if (!check.ok) {
+        setResetMsg("Unable to verify your account right now. Please try again.");
+        return;
+      }
+
+      if (!check.registered) {
+        setResetMsg("This email is not registered. Please sign up.");
+        setShowSignupCta(true);
+        return;
+      }
+
+      const redirectTo = `${getOrigin()}/reset-password`;
+
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+        redirectTo,
+      });
+
+      if (resetError) {
+        setResetMsg("Failed to send password reset email: " + resetError.message);
+      } else {
+        setResetMsg("Password reset link sent. Please check your inbox/spam.");
+      }
+    } catch (e) {
+      setResetMsg("Failed to send password reset email: Unexpected error. Please try again.");
+    } finally {
       setSubmitting(false);
-      return;
     }
-
-    // Send the password reset email
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: "https://nimble-granita-b2e3cd.netlify.app/reset-password", // <-- your deployed URL here
-    });
-
-    if (error) {
-      setResetMsg("Failed to send password reset email: " + error.message);
-    } else {
-      setResetMsg("A password reset link has been sent. Please check your email.");
-    }
-    setSubmitting(false);
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-white">
       <div className="bg-white shadow rounded-lg p-8 max-w-md w-full">
-        <h1 className="text-3xl font-bold text-center text-gray-900 mb-6">🔐 Keymatic Login</h1>
+        <h1 className="text-3xl font-bold text-center text-gray-900 mb-6">Keymatic Login</h1>
+
         {!showForgot ? (
           <>
             <form onSubmit={handleLogin} className="space-y-4">
@@ -121,35 +265,74 @@ export default function LoginPage() {
                 <input
                   type="email"
                   value={email}
-                  onChange={e => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setError("");
+                    setResendMsg("");
+                    setShowResendVerify(false);
+                    setShowSignupCta(false);
+                  }}
                   placeholder="Enter user email"
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-black"
                   required
                 />
               </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700">Password</label>
                 <input
                   type="password"
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setError("");
+                    setResendMsg("");
+                    setShowResendVerify(false);
+                    setShowSignupCta(false);
+                  }}
                   placeholder="Enter password"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-black"
                   required
                 />
               </div>
-              <button type="submit" className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition">
-                Login
+
+              <button
+                type="submit"
+                disabled={submitting}
+                className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition disabled:opacity-60"
+              >
+                {submitting ? "Logging in..." : "Login"}
               </button>
-              {error && <div className="text-red-600 text-center">{error}</div>}
+
+              {error && <div className="text-red-600 text-center font-medium">{error}</div>}
+
+              {/* ✅ NEW: Show signup button when needed */}
+              {showSignupCta && <SignupCta />}
+
+              {showResendVerify && (
+                <div className="text-center space-y-2">
+                  <button
+                    type="button"
+                    onClick={handleResendVerification}
+                    className="px-4 py-2 bg-gray-900 text-white rounded-md hover:opacity-90 transition"
+                  >
+                    Resend verification email
+                  </button>
+                  {resendMsg && <div className={`${resendMsgClass} font-medium`}>{resendMsg}</div>}
+                </div>
+              )}
             </form>
+
             <p className="mt-2 text-sm text-center">
               <button
                 onClick={() => {
                   setShowForgot(true);
                   setResetMsg("");
                   setError("");
-                  setPassword(""); // Optionally clear password field
+                  setShowResendVerify(false);
+                  setResendMsg("");
+                  setPassword("");
+                  setShowSignupCta(false);
                 }}
                 className="text-blue-600 hover:underline bg-transparent border-0 p-0"
                 type="button"
@@ -157,11 +340,16 @@ export default function LoginPage() {
                 Forgot your password?
               </button>
             </p>
+
             <p className="mt-4 text-sm text-gray-500 text-center">
               Don&apos;t have an account?{" "}
-              <a href="/signup" className="text-blue-600 hover:underline">
+              <button
+                type="button"
+                onClick={() => router.push("/signup")}
+                className="text-blue-600 hover:underline bg-transparent border-0 p-0"
+              >
                 Sign up
-              </a>
+              </button>
             </p>
           </>
         ) : (
@@ -171,24 +359,35 @@ export default function LoginPage() {
               <input
                 type="email"
                 value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setResetMsg("");
+                  setShowSignupCta(false);
+                }}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-black"
                 required
               />
             </div>
+
             <button
               type="submit"
               disabled={submitting}
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition"
+              className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition disabled:opacity-60"
             >
               {submitting ? "Sending..." : "Send Password Reset Link"}
             </button>
-            {resetMsg && <div className="text-center mt-4">{resetMsg}</div>}
+
+            {resetMsg && <div className={`text-center mt-4 font-medium ${resetMsgClass}`}>{resetMsg}</div>}
+
+            {/* ✅ NEW: Show signup button in forgot flow too */}
+            {showSignupCta && <SignupCta />}
+
             <button
               type="button"
               onClick={() => {
                 setShowForgot(false);
                 setResetMsg("");
+                setShowSignupCta(false);
               }}
               className="text-blue-600 hover:underline bg-transparent border-0 block mx-auto mt-2"
             >
