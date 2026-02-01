@@ -19,12 +19,11 @@ export default function LoginPage() {
   const [showResendVerify, setShowResendVerify] = useState(false);
   const [resendMsg, setResendMsg] = useState("");
 
-  // ✅ NEW: show Sign up CTA when email is not registered
-  const [showSignupCta, setShowSignupCta] = useState(false);
-
-  const getOrigin = () => {
+  // Helper: prefer deployed base URL (Netlify), fallback to current origin
+  const getSiteUrl = () => {
+    if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL.replace(/\/$/, "");
     if (typeof window === "undefined") return "http://localhost:3000";
-    return window.location.origin;
+    return window.location.origin.replace(/\/$/, "");
   };
 
   const isErrorText = (txt) => {
@@ -35,9 +34,9 @@ export default function LoginPage() {
       t.includes("cannot") ||
       t.includes("can only") ||
       t.includes("security purposes") ||
-      t.includes("not registered") ||
       t.includes("incorrect") ||
-      t.includes("not confirmed")
+      t.includes("not confirmed") ||
+      t.includes("invalid")
     );
   };
 
@@ -51,10 +50,21 @@ export default function LoginPage() {
     return isErrorText(resendMsg) ? "text-red-600" : "text-green-700";
   }, [resendMsg]);
 
+  const SignupCta = () => (
+    <div className="mt-3 text-center">
+      <button
+        type="button"
+        onClick={() => router.push("/signup")}
+        className="px-4 py-2 bg-gray-900 text-white rounded-md hover:opacity-90 transition"
+      >
+        Sign up
+      </button>
+    </div>
+  );
+
   const handleResendVerification = async () => {
     setResendMsg("");
     setError("");
-    setShowSignupCta(false);
 
     const trimmedEmail = (email || "").trim().toLowerCase();
     if (!trimmedEmail) {
@@ -63,7 +73,7 @@ export default function LoginPage() {
     }
 
     try {
-      const emailRedirectTo = `${getOrigin()}/auth/callback`;
+      const emailRedirectTo = `${getSiteUrl()}/auth/callback`;
 
       const { error: resendError } = await supabase.auth.resend({
         type: "signup",
@@ -81,43 +91,31 @@ export default function LoginPage() {
     }
   };
 
-  const checkEmailRegisteredInUsersTable = async (trimmedEmail) => {
-    const { data, error } = await supabase
-      .from("users")
-      .select("id")
-      .ilike("email", trimmedEmail)
-      .maybeSingle();
-
-    if (error) return { ok: false, registered: null, error };
-    return { ok: true, registered: !!data, error: null };
-  };
-
-  const SignupCta = () => (
-    <div className="mt-3 text-center">
-      <button
-        type="button"
-        onClick={() => router.push("/signup")}
-        className="px-4 py-2 bg-gray-900 text-white rounded-md hover:opacity-90 transition"
-      >
-        Sign up
-      </button>
-    </div>
-  );
-
+  /**
+   * IMPORTANT (RLS-safe):
+   * Do NOT query public.users by email from the browser.
+   * That breaks with RLS and also leaks whether an email exists (enumeration).
+   * Login should rely on Supabase Auth only.
+   */
   const handleLogin = async (e) => {
     e.preventDefault();
     setSubmitting(true);
     setError("");
     setResendMsg("");
     setShowResendVerify(false);
-    setShowSignupCta(false);
 
     try {
       const trimmedEmail = (email || "").trim().toLowerCase();
+      const trimmedPassword = (password || "").trim();
+
+      if (!trimmedEmail || !trimmedPassword) {
+        setError("Please enter both email and password.");
+        return;
+      }
 
       const { data: authData, error: loginError } = await supabase.auth.signInWithPassword({
         email: trimmedEmail,
-        password,
+        password: trimmedPassword,
       });
 
       if (loginError) {
@@ -135,25 +133,9 @@ export default function LoginPage() {
           return;
         }
 
-        const isInvalidCreds = msg.includes("invalid login credentials");
-
-        if (isInvalidCreds) {
-          const check = await checkEmailRegisteredInUsersTable(trimmedEmail);
-
-          if (!check.ok) {
-            setError("Unable to verify your account right now. Please try again.");
-            return;
-          }
-
-          // ✅ CHANGED: Not registered → show message + signup button (NO auto redirect)
-          if (!check.registered) {
-            setError("This email is not registered. Please sign up.");
-            setShowSignupCta(true);
-            return;
-          }
-
-          // Registered but wrong password
-          setError("Incorrect password. Please try again or reset it.");
+        // Treat invalid creds generically (don’t reveal if email exists)
+        if (msg.includes("invalid login credentials")) {
+          setError("Wrong email or password.");
           return;
         }
 
@@ -167,10 +149,15 @@ export default function LoginPage() {
         return;
       }
 
-      // Update last_login (do not block login if this fails)
-      await supabase.from("users").update({ last_login: new Date().toISOString() }).eq("id", user.id);
+      // Update last_login (won’t block login if it fails)
+      try {
+        await supabase
+          .from("users")
+          .update({ last_login: new Date().toISOString() })
+          .eq("id", user.id);
+      } catch (_) {}
 
-      // Fetch profile
+      // Fetch profile (RLS should allow only own row: id = auth.uid())
       const { data: profile, error: profileError } = await supabase
         .from("users")
         .select("id, role")
@@ -183,7 +170,7 @@ export default function LoginPage() {
       }
 
       if (!profile) {
-        setError("Profile not found for this account.");
+        setError("Profile not found for this account. Please contact support/admin.");
         return;
       }
 
@@ -207,34 +194,25 @@ export default function LoginPage() {
     }
   };
 
+  /**
+   * IMPORTANT (RLS-safe + security):
+   * Never block reset based on public.users lookup.
+   * Always call resetPasswordForEmail and show a generic message.
+   */
   const handleForgot = async (e) => {
     e.preventDefault();
     setResetMsg("");
     setError("");
     setSubmitting(true);
-    setShowSignupCta(false);
 
     try {
       const trimmedEmail = (email || "").trim().toLowerCase();
       if (!trimmedEmail) {
-        setResetMsg("Failed to send password reset email: Please enter your email first.");
+        setResetMsg("Please enter your email first.");
         return;
       }
 
-      // ✅ NEW: Block reset for unregistered email (based on your users table)
-      const check = await checkEmailRegisteredInUsersTable(trimmedEmail);
-      if (!check.ok) {
-        setResetMsg("Unable to verify your account right now. Please try again.");
-        return;
-      }
-
-      if (!check.registered) {
-        setResetMsg("This email is not registered. Please sign up.");
-        setShowSignupCta(true);
-        return;
-      }
-
-      const redirectTo = `${getOrigin()}/reset-password`;
+      const redirectTo = `${getSiteUrl()}/reset-password`;
 
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
         redirectTo,
@@ -243,10 +221,11 @@ export default function LoginPage() {
       if (resetError) {
         setResetMsg("Failed to send password reset email: " + resetError.message);
       } else {
-        setResetMsg("Password reset link sent. Please check your inbox/spam.");
+        // Generic success to avoid email enumeration
+        setResetMsg("If this email exists, a reset link has been sent. Please check inbox/spam.");
       }
     } catch (e) {
-      setResetMsg("Failed to send password reset email: Unexpected error. Please try again.");
+      setResetMsg("Unexpected error. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -270,7 +249,6 @@ export default function LoginPage() {
                     setError("");
                     setResendMsg("");
                     setShowResendVerify(false);
-                    setShowSignupCta(false);
                   }}
                   placeholder="Enter user email"
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-black"
@@ -288,7 +266,6 @@ export default function LoginPage() {
                     setError("");
                     setResendMsg("");
                     setShowResendVerify(false);
-                    setShowSignupCta(false);
                   }}
                   placeholder="Enter password"
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-black"
@@ -305,9 +282,6 @@ export default function LoginPage() {
               </button>
 
               {error && <div className="text-red-600 text-center font-medium">{error}</div>}
-
-              {/* ✅ NEW: Show signup button when needed */}
-              {showSignupCta && <SignupCta />}
 
               {showResendVerify && (
                 <div className="text-center space-y-2">
@@ -332,7 +306,6 @@ export default function LoginPage() {
                   setShowResendVerify(false);
                   setResendMsg("");
                   setPassword("");
-                  setShowSignupCta(false);
                 }}
                 className="text-blue-600 hover:underline bg-transparent border-0 p-0"
                 type="button"
@@ -342,14 +315,7 @@ export default function LoginPage() {
             </p>
 
             <p className="mt-4 text-sm text-gray-500 text-center">
-              Don&apos;t have an account?{" "}
-              <button
-                type="button"
-                onClick={() => router.push("/signup")}
-                className="text-blue-600 hover:underline bg-transparent border-0 p-0"
-              >
-                Sign up
-              </button>
+              Don&apos;t have an account? <SignupCta />
             </p>
           </>
         ) : (
@@ -362,7 +328,6 @@ export default function LoginPage() {
                 onChange={(e) => {
                   setEmail(e.target.value);
                   setResetMsg("");
-                  setShowSignupCta(false);
                 }}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-black"
                 required
@@ -377,17 +342,15 @@ export default function LoginPage() {
               {submitting ? "Sending..." : "Send Password Reset Link"}
             </button>
 
-            {resetMsg && <div className={`text-center mt-4 font-medium ${resetMsgClass}`}>{resetMsg}</div>}
-
-            {/* ✅ NEW: Show signup button in forgot flow too */}
-            {showSignupCta && <SignupCta />}
+            {resetMsg && (
+              <div className={`text-center mt-4 font-medium ${resetMsgClass}`}>{resetMsg}</div>
+            )}
 
             <button
               type="button"
               onClick={() => {
                 setShowForgot(false);
                 setResetMsg("");
-                setShowSignupCta(false);
               }}
               className="text-blue-600 hover:underline bg-transparent border-0 block mx-auto mt-2"
             >
