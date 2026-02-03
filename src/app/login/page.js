@@ -314,9 +314,9 @@ export default function LoginPage() {
               </button>
             </p>
 
-            <p className="mt-4 text-sm text-gray-500 text-center">
+            <div className="mt-4 text-sm text-gray-500 text-center">
               Don&apos;t have an account? <SignupCta />
-            </p>
+            </div>
           </>
         ) : (
           <form onSubmit={handleForgot} className="space-y-4">
