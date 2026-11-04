@@ -185,7 +185,8 @@ export default function LoginPage() {
 
       if (role === "admin") router.push("/admin");
       else if (role === "owner") router.push("/owner-panel");
-            else router.push("/");
+      else if (role === "client") router.push("/client-panel");
+      else setError("Your account has no access yet. Please contact the admin.");
     } catch (e) {
       setError("An unexpected error occurred. Please try again.");
     } finally {

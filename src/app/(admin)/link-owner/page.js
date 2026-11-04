@@ -55,7 +55,11 @@ export default function LinkOwnerPage() {
   };
 
   // Lookup helpers for the table:
-  const getMachine = (id) => machines.find(m => m.id === id);
+  // keys.machine_id holds the machine code (e.g. "A12"), like Create Key and the pickup flow expect.
+  // Older rows linked here may hold machines.id, so match either.
+  const getMachine = (id) =>
+    machines.find(m => String(m.machine_id) === String(id)) ||
+    machines.find(m => String(m.id) === String(id));
   const getOwner = (id) => owners.find(o => o.id === id);
 
   // --- Linking form logic (search, select, submit, edit, delete) ---
@@ -112,7 +116,7 @@ export default function LinkOwnerPage() {
     if (!selectedOwner || !selectedMachine) return;
     const payload = {
       owner_id: selectedOwner.id,
-      machine_id: selectedMachine.id
+      machine_id: selectedMachine.machine_id
     };
     let error;
     if (editMode && editingKeyId) {

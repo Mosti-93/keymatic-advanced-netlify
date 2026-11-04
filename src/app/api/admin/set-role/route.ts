@@ -1,5 +1,3 @@
-console.log("SERVICE KEY EXISTS:", !!process.env.SUPABASE_SERVICE_ROLE_KEY);
-
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
