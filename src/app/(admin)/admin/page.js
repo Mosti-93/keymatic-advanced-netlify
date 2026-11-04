@@ -18,13 +18,14 @@ function fmt(v) {
   });
 }
 
+// Shortcut cards; each shows its own live number (see `counts` below).
 const LINKS = [
-  { href: "/create-key", label: "Keys", hint: "Add and edit keys", icon: "🔑" },
-  { href: "/create-machine", label: "Machines", hint: "Machines and slots", icon: "🏭" },
-  { href: "/add-client", label: "Guests", hint: "Bookings and pickups", icon: "🧳" },
-  { href: "/create-owner", label: "Owners", hint: "Property owners", icon: "👤" },
-  { href: "/link-owner", label: "Link Owner", hint: "Assign keys", icon: "🔗" },
-  { href: "/users", label: "Users", hint: "Roles and access", icon: "👥" },
+  { key: "machines", href: "/create-machine", label: "Machines", hint: "Machines and slots", icon: "🏭" },
+  { key: "keys", href: "/create-key", label: "Keys", hint: "Add and edit keys", icon: "🔑" },
+  { key: "guests", href: "/add-client", label: "Guests", hint: "staying now", icon: "🧳" },
+  { key: "owners", href: "/create-owner", label: "Owners", hint: "Property owners", icon: "👤" },
+  { key: "relink", href: "/link-owner", label: "Link Owner", hint: "keys need relinking", icon: "🔗" },
+  { key: "users", href: "/users", label: "Users", hint: "Roles and access", icon: "👥" },
 ];
 
 export default function Dashboard() {
@@ -85,15 +86,14 @@ export default function Dashboard() {
   }, [keys, machines, users, clients, slots]);
 
   const now = new Date();
-  const stats = [
-    { label: "Machines", value: machines.length },
-    { label: "Keys", value: keys.length },
-    { label: "Owners", value: users.filter((u) => String(u.role || "").toLowerCase() === "owner").length },
-    {
-      label: "Guests staying now",
-      value: clients.filter((c) => toDate(c.check_in) <= now && now <= toDate(c.check_out)).length,
-    },
-  ];
+  const counts = {
+    machines: machines.length,
+    keys: keys.length,
+    guests: clients.filter((c) => toDate(c.check_in) <= now && now <= toDate(c.check_out)).length,
+    owners: users.filter((u) => String(u.role || "").toLowerCase() === "owner").length,
+    relink: rows.filter((r) => !r.machine && !!r.machineRaw).length,
+    users: users.length,
+  };
 
   const hour = now.getHours();
   const greeting = hour < 12 ? "Good morning." : hour < 18 ? "Good afternoon." : "Good evening.";
@@ -106,23 +106,19 @@ export default function Dashboard() {
         <p className="k-subtitle">Here’s everything happening across your machines.</p>
       </div>
 
-      <div className="mt-10 grid grid-cols-2 lg:grid-cols-4 gap-4 k-fade-in-2">
-        {stats.map((s) => (
-          <div key={s.label} className="k-card !p-6">
-            <div className="text-[13px] k-muted">{s.label}</div>
-            <div className="mt-1 text-4xl font-semibold tracking-tight" style={{ letterSpacing: "-0.03em" }}>
-              {loading ? <span className="inline-block h-9 w-12 rounded-lg bg-black/5 animate-pulse" /> : s.value}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-4 k-fade-in-3">
+      <div className="mt-10 grid grid-cols-2 md:grid-cols-3 gap-4 k-fade-in-2">
         {LINKS.map((l) => (
           <Link key={l.href} href={l.href} className="k-tile">
-            <div className="text-2xl">{l.icon}</div>
-            <div className="mt-3 text-[17px] font-semibold">{l.label}</div>
-            <div className="text-[14px] k-muted">{l.hint}</div>
+            <div className="flex items-start justify-between">
+              <div className="text-[15px] font-semibold">{l.label}</div>
+              <div className="text-xl" aria-hidden="true">
+                {l.icon}
+              </div>
+            </div>
+            <div className="mt-3 text-4xl font-semibold tracking-tight" style={{ letterSpacing: "-0.03em" }}>
+              {loading ? <span className="inline-block h-9 w-12 rounded-lg bg-black/5 animate-pulse" /> : counts[l.key]}
+            </div>
+            <div className="mt-1 text-[13px] k-muted">{l.hint}</div>
           </Link>
         ))}
       </div>
