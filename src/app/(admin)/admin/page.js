@@ -40,7 +40,7 @@ export default function Dashboard() {
         supabase.from("machines").select('id, machine_id, "Machine name", location'),
         supabase.from("users").select("id, name, email, role"),
         supabase.from("clients").select("id, first_name, last_name, email, key_id, check_in, check_out"),
-        supabase.from("key_slot_presence").select("machine_id, slot_number, UID, removed_at"),
+        supabase.from("key_slot_presence").select("machine_id, slot_number, UID"),
       ]);
       const names = ["keys", "machines", "users", "clients", "key slots"];
       setErrors(results.map((r, i) => (r.error ? `${names[i]}: ${r.error.message}` : null)).filter(Boolean));
@@ -65,7 +65,7 @@ export default function Dashboard() {
     const findMachine = (mid) =>
       machines.find((m) => String(m.machine_id) === String(mid)) ||
       machines.find((m) => String(m.id) === String(mid));
-    const inMachine = new Set(slots.filter((s) => s.UID && !s.removed_at).map((s) => String(s.UID).toUpperCase()));
+    const inMachine = new Set(slots.filter((s) => s.UID).map((s) => String(s.UID).toUpperCase()));
 
     return keys.map((k) => {
       const keyClients = clients
