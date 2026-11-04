@@ -1,6 +1,8 @@
 'use client'
 import { useState, useEffect } from "react";
 import { supabase } from "@/utils/supabaseClient";
+import DataTable, { RowAction } from "@/components/DataTable";
+import PageHeader, { Notice, FormPanel } from "@/components/PageHeader";
 
 export default function LinkOwnerPage() {
   // --- Link form states ---
@@ -172,192 +174,140 @@ export default function LinkOwnerPage() {
     }
   };
 
+  const cancelEdit = () => {
+    setEditMode(false);
+    setEditingKeyId(null);
+    setSelectedKey(null);
+    setKeySearch('');
+    setSelectedMachine(null);
+    setMachineSearch('');
+    setSelectedOwner(null);
+    setOwnerEmail('');
+    setMessage('');
+    setFoundOwners([]);
+    setFoundKeys([]);
+    setFoundMachines([]);
+  };
+
+  const canSubmit = editMode
+    ? selectedOwner && selectedMachine && editingKeyId
+    : selectedOwner && selectedKey && selectedMachine;
+
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-800">
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto py-6 px-4">
-          <h1 className="text-3xl font-bold">🔗 Link Owner</h1>
-        </div>
-      </header>
-      <main className="max-w-7xl mx-auto py-10 px-4 space-y-8">
-        {/* Link Form */}
-        <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">{editMode ? "Edit Linked Key" : "Link Key to Owner"}</h2>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Owner Search */}
-            <div className="mb-4 relative">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Search Owner by Email</label>
-              <input
-                type="email"
-                placeholder="Enter owner email"
-                value={ownerEmail}
-                onChange={handleEmailInput}
-                className="block w-full rounded-md border-gray-300 shadow-sm"
-                autoComplete="off"
-              />
-              {foundOwners.length > 0 && (
-                <ul className="absolute left-0 top-full z-10 bg-white border border-gray-300 rounded-md shadow max-h-48 w-full overflow-y-auto mt-1">
-                  {foundOwners.map((owner) => (
-                    <li
-                      key={owner.id}
-                      onClick={() => handleOwnerSelect(owner)}
-                      className="p-2 hover:bg-blue-100 cursor-pointer"
-                    >
-                      <span className="font-medium">{owner.name}</span>
-                      <span className="ml-2 text-xs text-gray-600">{owner.email}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            {/* Key Search */}
-            <div className="mb-4 relative">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Search Key by ID or UID</label>
-              <input
-                type="text"
-                placeholder="Type to search key_id or UID"
-                value={keySearch}
-                onChange={handleKeySearchInput}
-                className="block w-full rounded-md border-gray-300 shadow-sm"
-                autoComplete="off"
-                disabled={availableKeys.length === 0}
-              />
-              {foundKeys.length > 0 && (
-                <ul className="absolute left-0 top-full z-10 bg-white border border-gray-300 rounded-md shadow max-h-48 w-full overflow-y-auto mt-1">
-                  {foundKeys.map((key) => (
-                    <li
-                      key={key.id}
-                      onClick={() => handleKeySelect(key)}
-                      className="p-2 hover:bg-blue-100 cursor-pointer"
-                    >
-                      <span className="font-medium">
-                        {key.key_id || key.id}
-                        <span className="ml-2 text-xs text-gray-600">{key.UID}</span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            {/* Machine Search */}
-            <div className="mb-4 relative">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Search Machine by ID or Name</label>
-              <input
-                type="text"
-                placeholder="Type to search machine_id or name"
-                value={machineSearch}
-                onChange={handleMachineSearchInput}
-                className="block w-full rounded-md border border-gray-300 shadow-sm"
-                autoComplete="off"
-                disabled={machines.length === 0}
-              />
-              {foundMachines.length > 0 && (
-                <ul className="absolute left-0 top-full z-10 bg-white border border-gray-300 rounded-md shadow max-h-48 w-full overflow-y-auto mt-1">
-                  {foundMachines.map((machine) => (
-                    <li
-                      key={machine.id}
-                      onClick={() => handleMachineSelect(machine)}
-                      className="p-2 hover:bg-green-100 cursor-pointer"
-                    >
-                      <span className="font-medium">
-                        {machine.machine_id}
-                        <span className="ml-2 text-xs text-gray-600">{machine['Machine name']}</span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <div className="flex space-x-2">
-              <button
-                type="submit"
-                className="mt-4 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition"
-                disabled={editMode
-                  ? !selectedOwner || !selectedMachine || !editingKeyId
-                  : !selectedOwner || !selectedKey || !selectedMachine}
-              >
-                {editMode ? "Update Link" : "Link"}
+    <div className="k-page">
+      <PageHeader eyebrow="Link Owner" title="Assign keys" subtitle="Connect a key to its owner and the machine it lives in." />
+
+      <Notice>{message}</Notice>
+      <div className="space-y-6">
+        <FormPanel title={editMode ? "Edit link" : "New link"} addLabel="Link a key" forceOpen={editMode}>
+          <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 items-start">
+            <Typeahead
+              label="Owner"
+              placeholder="Search owner email"
+              type="email"
+              value={ownerEmail}
+              onChange={handleEmailInput}
+              selected={!!selectedOwner}
+              items={foundOwners}
+              itemKey={(o) => o.id}
+              renderItem={(o) => (<><span className="font-medium">{o.name}</span><span className="ml-2 text-[13px] k-faint">{o.email}</span></>)}
+              onPick={handleOwnerSelect}
+            />
+            <Typeahead
+              label="Key"
+              placeholder={editMode ? "Key being edited" : availableKeys.length ? "Search key ID or UID" : "No unassigned keys"}
+              value={keySearch}
+              onChange={handleKeySearchInput}
+              disabled={editMode || availableKeys.length === 0}
+              selected={!!selectedKey}
+              items={foundKeys}
+              itemKey={(k) => k.id}
+              renderItem={(k) => (<><span className="font-medium">{k.key_id || k.id}</span><span className="ml-2 text-[13px] k-faint">{k.UID}</span></>)}
+              onPick={handleKeySelect}
+            />
+            <Typeahead
+              label="Machine"
+              placeholder="Search machine code or name"
+              value={machineSearch}
+              onChange={handleMachineSearchInput}
+              disabled={machines.length === 0}
+              selected={!!selectedMachine}
+              items={foundMachines}
+              itemKey={(m) => m.id}
+              renderItem={(m) => (<><span className="font-medium">{m.machine_id}</span><span className="ml-2 text-[13px] k-faint">{m['Machine name']}</span></>)}
+              onPick={handleMachineSelect}
+            />
+            <div className="flex gap-2 pt-2 md:col-span-2 lg:col-span-3 md:justify-end">
+              <button type="submit" className="k-btn-primary flex-1 md:flex-none md:min-w-40" disabled={!canSubmit}>
+                {editMode ? "Save link" : "Link key"}
               </button>
-              {editMode && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditMode(false);
-                    setEditingKeyId(null);
-                    setSelectedKey(null);
-                    setKeySearch('');
-                    setSelectedMachine(null);
-                    setMachineSearch('');
-                    setSelectedOwner(null);
-                    setOwnerEmail('');
-                    setMessage('');
-                    setFoundOwners([]);
-                    setFoundKeys([]);
-                    setFoundMachines([]);
-                  }}
-                  className="bg-gray-400 text-white px-4 py-2 rounded-md hover:bg-gray-500"
-                >
-                  Cancel
-                </button>
-              )}
+              {editMode && <button type="button" onClick={cancelEdit} className="k-btn-secondary">Cancel</button>}
             </div>
           </form>
-          {message && <p className="mt-4 text-sm text-center">{message}</p>}
-        </div>
+          
+        </FormPanel>
 
-        {/* Existing Keys Table (same as CreateKeyPage) */}
-        <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">📋 Existing Keys</h2>
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-100">
-              <tr>
-                {["key_id", "UID", "room_number", "machine_id", "machine_name", "owner_name"].map((col) => (
-                  <th key={col} className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    {col}
-                  </th>
-                ))}
-                <th className="px-4 py-2 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {loading ? (
-                <tr><td colSpan={7} className="text-center py-8 text-gray-400">Loading…</td></tr>
-              ) : keys.length === 0 ? (
-                <tr><td colSpan={7} className="text-center py-8 text-gray-400">No linked keys found.</td></tr>
-              ) : (
-                keys.map((k) => {
-                  const machine = getMachine(k.machine_id);
-                  const owner = getOwner(k.owner_id);
-                  return (
-                    <tr key={k.id}>
-                      <td className="px-4 py-2">{k.key_id}</td>
-                      <td className="px-4 py-2">{k.UID}</td>
-                      <td className="px-4 py-2">{k.room_number}</td>
-                      <td className="px-4 py-2">{machine?.machine_id || '—'}</td>
-                      <td className="px-4 py-2">{machine?.["Machine name"] || '—'}</td>
-                      <td className="px-4 py-2">{owner?.name || '—'}</td>
-                      <td className="px-4 py-2 text-right space-x-2">
-                        <button
-                          onClick={() => handleEdit(k)}
-                          className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDelete(k.id)}
-                          className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700"
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </main>
+        <DataTable
+          title="Linked keys"
+          rows={keys}
+          loading={loading}
+          exportName="linked-keys"
+          searchPlaceholder="Search keys, owners, machines"
+          defaultSort={{ key: "room", dir: "asc" }}
+          emptyText="No linked keys yet."
+          filters={[
+            { key: "all", label: "All", test: () => true },
+            { key: "relink", label: "Needs relink", test: (k) => k.machine_id != null && !getMachine(k.machine_id) },
+          ]}
+          columns={[
+            { key: "key_id", header: "Key", mobile: "title", value: (k) => k.key_id || k.id, cell: (k) => <span className="font-medium">{k.key_id || k.id}</span> },
+            { key: "UID", header: "UID", cell: (k) => k.UID ? <code className="text-[12px] k-muted">{k.UID}</code> : null },
+            { key: "room", header: "Room", mobile: "subtitle", value: (k) => k.room_number },
+            {
+              key: "machine",
+              header: "Machine",
+              value: (k) => { const m = getMachine(k.machine_id); return m ? `${m["Machine name"] || ""} ${m.machine_id}` : ""; },
+              cell: (k) => {
+                const m = getMachine(k.machine_id);
+                if (!m) return <span className="k-badge-orange">Unknown · relink</span>;
+                return (<><div>{m["Machine name"] || m.machine_id}</div><div className="text-[12px] k-faint">{m.machine_id}</div></>);
+              },
+            },
+            { key: "owner", header: "Owner", value: (k) => getOwner(k.owner_id)?.name || "" },
+          ]}
+          rowClassName={(k) => (k.id === editingKeyId ? "!bg-[#e8f2fd]" : "")}
+          rowActions={(k) => (
+            <>
+              <RowAction onClick={() => handleEdit(k)}>Edit</RowAction>
+              <RowAction tone="danger" onClick={() => handleDelete(k.id)}>Unlink</RowAction>
+            </>
+          )}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** Text field with a dropdown of matches (used for owner / key / machine search). */
+function Typeahead({ label, items, itemKey, renderItem, onPick, selected, ...input }) {
+  return (
+    <div className="relative">
+      <label className="k-label">{label}</label>
+      <div className="relative">
+        <input {...input} autoComplete="off" className={`k-input ${selected ? "!pr-10 !border-[#1d8a3a]" : ""}`} />
+        {selected && <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#1d8a3a]" aria-label="Selected">✓</span>}
+      </div>
+      {items.length > 0 && (
+        <ul className="absolute left-0 top-full z-20 mt-1.5 max-h-56 w-full overflow-y-auto rounded-2xl bg-white p-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.14)] border border-black/5">
+          {items.map((it) => (
+            <li key={itemKey(it)}>
+              <button type="button" onClick={() => onPick(it)} className="w-full text-left rounded-xl px-3 py-2 hover:bg-[#f5f5f7]">
+                {renderItem(it)}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

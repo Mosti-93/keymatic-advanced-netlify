@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/utils/supabaseClient";
+import DataTable from "@/components/DataTable";
 
 const toDate = (v) => (v ? new Date(String(v).replace(" ", "T")) : null);
 
@@ -28,7 +29,6 @@ export default function Dashboard() {
   const [users, setUsers] = useState([]);
   const [clients, setClients] = useState([]);
   const [slots, setSlots] = useState([]);
-  const [search, setSearch] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -82,14 +82,7 @@ export default function Dashboard() {
     });
   }, [keys, machines, users, clients, slots]);
 
-  const filtered = rows.filter((r) => {
-    const q = search.trim().toLowerCase();
-    if (!q) return true;
-    return [
-      r.keyLabel, r.room, r.machine?.["Machine name"], r.machine?.machine_id, r.owner?.name, r.owner?.email,
-      r.client?.first_name, r.client?.last_name, r.client?.email,
-    ].some((v) => String(v || "").toLowerCase().includes(q));
-  });
+
 
   const now = new Date();
   const stats = [
@@ -141,139 +134,72 @@ export default function Dashboard() {
         </div>
       )}
 
-      <section className="k-card mt-10 !p-0 overflow-hidden">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-6 sm:p-8 pb-4 sm:pb-4">
-          <div>
-            <h2 className="k-h2">Keys</h2>
-            <p className="text-[14px] k-muted mt-1">Every key, where it is, and who it’s for.</p>
-          </div>
-          <div className="relative w-full md:w-80">
-            <svg className="absolute left-3.5 top-1/2 -translate-y-1/2" width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
-              <circle cx="7" cy="7" r="5.2" fill="none" stroke="#86868b" strokeWidth="1.6" />
-              <path d="M11 11l3.5 3.5" stroke="#86868b" strokeWidth="1.6" strokeLinecap="round" />
-            </svg>
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search" className="k-input !pl-10 !py-2.5 !rounded-full !bg-[#f5f5f7] !border-transparent" />
-          </div>
-        </div>
-
-        {loading ? (
-          <div className="px-8 pb-8 space-y-3">
-            {[0, 1, 2, 3].map((i) => <div key={i} className="h-12 rounded-xl bg-black/[0.04] animate-pulse" />)}
-          </div>
-        ) : filtered.length === 0 ? (
-          <p className="px-8 pb-10 k-muted">No keys match your search.</p>
-        ) : (
-          <>
-          {/* Phones: one card per key */}
-          <div className="md:hidden px-4 pb-4 space-y-3">
-            {filtered.map((r) => (
-              <Link key={r.id} href="/link-owner" className="block rounded-2xl bg-[#f5f5f7] p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="font-semibold">{r.keyLabel}</div>
-                    <div className="text-[13px] k-muted">Room {r.room}</div>
-                  </div>
-                  {r.present === null ? null : r.present ? (
-                    <span className="k-badge-green">● In machine</span>
-                  ) : (
-                    <span className="k-badge-gray">Out</span>
-                  )}
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-3 text-[13px]">
-                  <div>
-                    <div className="k-faint">Machine</div>
-                    {r.machine ? (
-                      <div>{r.machine["Machine name"] || r.machine.machine_id}</div>
-                    ) : r.machineRaw ? (
-                      <span className="k-badge-orange">Relink</span>
-                    ) : (
-                      <div className="k-faint">Not linked</div>
-                    )}
-                  </div>
-                  <div>
-                    <div className="k-faint">Owner</div>
-                    <div className="truncate">{r.owner?.name || "—"}</div>
-                  </div>
-                </div>
-                {r.client && (
-                  <div className="mt-3 text-[13px]">
-                    <span className={r.clientIsCurrent ? "k-badge-green" : "k-badge-blue"}>{r.clientIsCurrent ? "Now" : "Next"}</span>{" "}
-                    {`${r.client.first_name || ""} ${r.client.last_name || ""}`.trim()}
-                    <div className="k-faint mt-1">{fmt(r.client.check_in)} → {fmt(r.client.check_out)}</div>
-                  </div>
-                )}
-              </Link>
-            ))}
-          </div>
-
-          {/* Larger screens: table */}
-          <div className="hidden md:block overflow-x-auto px-2 sm:px-4 pb-4">
-            <table className="k-table">
-              <thead>
-                <tr>
-                  {["Key", "Room", "Machine", "Owner", "Guest", "In machine", ""].map((h) => <th key={h}>{h}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((r) => (
-                  <tr key={r.id}>
-                    <td className="font-medium">{r.keyLabel}</td>
-                    <td>{r.room}</td>
-                    <td>
-                      {r.machine ? (
-                        <>
-                          <div>{r.machine["Machine name"] || r.machine.machine_id}</div>
-                          <div className="text-[12px] k-faint">{r.machine.machine_id}</div>
-                        </>
-                      ) : r.machineRaw ? (
-                        <span className="k-badge-orange">Unknown · relink</span>
-                      ) : (
-                        <span className="k-faint">Not linked</span>
-                      )}
-                    </td>
-                    <td>
-                      {r.owner ? (
-                        <>
-                          <div>{r.owner.name || "—"}</div>
-                          <div className="text-[12px] k-faint">{r.owner.email}</div>
-                        </>
-                      ) : (
-                        <span className="k-faint">No owner</span>
-                      )}
-                    </td>
-                    <td>
-                      {r.client ? (
-                        <>
-                          <div className="flex items-center gap-2">
-                            {`${r.client.first_name || ""} ${r.client.last_name || ""}`.trim() || r.client.email}
-                            <span className={r.clientIsCurrent ? "k-badge-green" : "k-badge-blue"}>{r.clientIsCurrent ? "Now" : "Next"}</span>
-                          </div>
-                          <div className="text-[12px] k-faint">{fmt(r.client.check_in)} → {fmt(r.client.check_out)}</div>
-                        </>
-                      ) : (
-                        <span className="k-faint">No booking</span>
-                      )}
-                    </td>
-                    <td>
-                      {r.present === null ? (
-                        <span className="k-faint">—</span>
-                      ) : r.present ? (
-                        <span className="k-badge-green">● In machine</span>
-                      ) : (
-                        <span className="k-badge-gray">Out</span>
-                      )}
-                    </td>
-                    <td className="text-right">
-                      <Link href="/link-owner" className="k-link text-[14px]">Edit</Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          </>
-        )}
-      </section>
+      <div className="mt-10">
+        <DataTable
+          title="Keys"
+          subtitle="Every key, where it is, and who it’s for."
+          rows={rows}
+          loading={loading}
+          exportName="keys-overview"
+          searchPlaceholder="Search key, room, machine, owner, guest"
+          defaultSort={{ key: "room", dir: "asc" }}
+          emptyText="No keys yet."
+          filters={[
+            { key: "all", label: "All", test: () => true },
+            { key: "in", label: "In machine", test: (r) => r.present === true },
+            { key: "out", label: "Out", test: (r) => r.present === false },
+            { key: "now", label: "Guest staying", test: (r) => r.clientIsCurrent },
+            { key: "relink", label: "Needs relink", test: (r) => !r.machine && !!r.machineRaw },
+          ]}
+          columns={[
+            { key: "key", header: "Key", mobile: "title", value: (r) => r.keyLabel, cell: (r) => <span className="font-medium">{r.keyLabel}</span> },
+            { key: "room", header: "Room", mobile: "subtitle", value: (r) => (r.room === "—" ? "" : r.room), cell: (r) => r.room },
+            {
+              key: "machine",
+              header: "Machine",
+              value: (r) => (r.machine ? `${r.machine["Machine name"] || ""} ${r.machine.machine_id}` : ""),
+              cell: (r) =>
+                r.machine ? (
+                  <><div>{r.machine["Machine name"] || r.machine.machine_id}</div><div className="text-[12px] k-faint">{r.machine.machine_id}</div></>
+                ) : r.machineRaw ? (
+                  <span className="k-badge-orange">Unknown · relink</span>
+                ) : (
+                  <span className="k-faint">Not linked</span>
+                ),
+            },
+            {
+              key: "owner",
+              header: "Owner",
+              value: (r) => r.owner?.name || "",
+              cell: (r) => (r.owner ? <><div>{r.owner.name || "—"}</div><div className="text-[12px] k-faint">{r.owner.email}</div></> : <span className="k-faint">No owner</span>),
+            },
+            {
+              key: "guest",
+              header: "Guest",
+              value: (r) => (r.client ? `${r.client.first_name || ""} ${r.client.last_name || ""}`.trim() : ""),
+              cell: (r) =>
+                r.client ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      {`${r.client.first_name || ""} ${r.client.last_name || ""}`.trim() || r.client.email}
+                      <span className={r.clientIsCurrent ? "k-badge-green" : "k-badge-blue"}>{r.clientIsCurrent ? "Now" : "Next"}</span>
+                    </div>
+                    <div className="text-[12px] k-faint">{fmt(r.client.check_in)} → {fmt(r.client.check_out)}</div>
+                  </>
+                ) : (
+                  <span className="k-faint">No booking</span>
+                ),
+            },
+            {
+              key: "present",
+              header: "Status",
+              value: (r) => (r.present === null ? "" : r.present ? "In machine" : "Out"),
+              cell: (r) => (r.present === null ? null : r.present ? <span className="k-badge-green">● In machine</span> : <span className="k-badge-gray">Out</span>),
+            },
+          ]}
+          rowActions={() => <Link href="/link-owner" className="k-link text-[14px] px-2">Edit</Link>}
+        />
+      </div>
     </div>
   );
 }

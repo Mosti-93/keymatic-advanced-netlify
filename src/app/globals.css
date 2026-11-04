@@ -113,10 +113,10 @@ body {
   /* Tables */
   .k-table { @apply w-full text-left text-[14px]; border-collapse: separate; border-spacing: 0; }
   .k-table thead th {
-    @apply px-4 py-3 text-[12px] font-medium uppercase tracking-wide whitespace-nowrap;
+    @apply px-3 py-3 text-[12px] font-medium uppercase tracking-wide whitespace-nowrap;
     color: var(--k-text-3); border-bottom: 1px solid var(--k-line);
   }
-  .k-table tbody td { @apply px-4 py-4 align-top; border-bottom: 1px solid var(--k-line); }
+  .k-table tbody td { @apply px-3 py-3.5 align-top; border-bottom: 1px solid var(--k-line); }
   .k-table tbody tr:last-child td { border-bottom: 0; }
   .k-table tbody tr { @apply transition-colors; }
   .k-table tbody tr:hover { background: #fafafc; }

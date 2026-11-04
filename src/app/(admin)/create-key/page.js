@@ -1,6 +1,8 @@
 'use client'
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/utils/supabaseClient";
+import DataTable, { RowAction } from "@/components/DataTable";
+import PageHeader, { Notice, FormPanel } from "@/components/PageHeader";
 
 export default function CreateKeyPage() {
   // -------- FORM STATE --------
@@ -30,12 +32,7 @@ export default function CreateKeyPage() {
   const [editMode, setEditMode] = useState(false);
   const [editingKeyId, setEditingKeyId] = useState(null);
 
-  // -------- TABLE CONTROLS (Owner Panel–style) --------
-  const [tableFilter, setTableFilter] = useState('');
-  const [ownerAssignedFilter, setOwnerAssignedFilter] = useState('all');   // all | yes | no
-  const [machineAssignedFilter, setMachineAssignedFilter] = useState('all'); // all | yes | no
-  const [sortField, setSortField] = useState('key_id');
-  const [sortDir, setSortDir] = useState('asc');
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     fetchAll();
@@ -59,6 +56,7 @@ export default function CreateKeyPage() {
     }
 
     if (!ownersRes.error) setOwners(ownersRes.data || []);
+    setLoaded(true);
   };
 
   // -------- HELPERS --------
@@ -192,374 +190,155 @@ export default function CreateKeyPage() {
     }
   };
 
-  // -------- TABLE: SEARCH / FILTER / SORT --------
-  const sorters = {
-    key_id: (k) => (k.key_id || '').toLowerCase(),
-    UID: (k) => (k.UID || '').toLowerCase(),
-    room_number: (k) => (k.room_number || '').toLowerCase(),
-    room_location: (k) => (k.room_location || '').toLowerCase(),
-    room_address: (k) => (k.room_address || '').toLowerCase(),
-    machine: (k) => {
-      const m = getMachine(k.machine_id);
-      const idStr = k.machine_id == null ? '' : String(k.machine_id);
-      return ((m?.machine_name || '') + ' ' + idStr).toLowerCase();
-    },
-    owner: (k) => {
-      const o = getOwner(k.owner_id);
-      return ((o?.name || '') + ' ' + (o?.email || '')).toLowerCase();
-    },
+  const resetForm = () => {
+    setForm({ key_id: '', UID: '', room_number: '', room_location: '', room_address: '', machine_id: '', owner_id: '' });
+    setEditMode(false);
+    setEditingKeyId(null);
+    setOwnerSearch('');
+    setSelectedOwner(null);
+    setMessage('');
   };
 
-  const passesAssignedFilter = (val, mode) => {
-    if (mode === 'all') return true;
-    if (mode === 'yes') return val != null && val !== '' && val !== undefined;
-    if (mode === 'no')  return val == null || val === '';
-    return true;
-  };
-
-  const visibleKeys = useMemo(() => {
-    let arr = [...keys];
-
-    // Assigned filters
-    arr = arr.filter(k =>
-      passesAssignedFilter(k.owner_id, ownerAssignedFilter) &&
-      passesAssignedFilter(k.machine_id, machineAssignedFilter)
-    );
-
-    // Free text search
-    if (tableFilter.trim()) {
-      const f = tableFilter.trim().toLowerCase();
-      arr = arr.filter(k => {
-        const m = getMachine(k.machine_id);
-        const o = getOwner(k.owner_id);
-        return (
-          (k.key_id || '').toLowerCase().includes(f) ||
-          (k.UID || '').toLowerCase().includes(f) ||
-          (k.room_number || '').toLowerCase().includes(f) ||
-          (k.room_location || '').toLowerCase().includes(f) ||
-          (k.room_address || '').toLowerCase().includes(f) ||
-          (m?.machine_name || '').toLowerCase().includes(f) ||
-          (String(k.machine_id ?? '')).toLowerCase().includes(f) ||
-          (o?.name || '').toLowerCase().includes(f) ||
-          (o?.email || '').toLowerCase().includes(f)
-        );
-      });
-    }
-
-    // Sort
-    if (sortField && sorters[sortField]) {
-      arr.sort((a, b) => {
-        const va = sorters[sortField](a);
-        const vb = sorters[sortField](b);
-        if (va < vb) return sortDir === 'asc' ? -1 : 1;
-        if (va > vb) return sortDir === 'asc' ? 1 : -1;
-        return 0;
-      });
-    }
-    return arr;
-  }, [keys, tableFilter, ownerAssignedFilter, machineAssignedFilter, sortField, sortDir, machinesById, ownersById]);
-
-  const handleSort = (field) => {
-    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortField(field); setSortDir('asc'); }
-  };
-
-  const SortLabel = ({ field, children }) => (
-    <span className="cursor-pointer select-none" onClick={() => handleSort(field)}>
-      {children} {sortField === field && (sortDir === 'asc' ? '▲' : '▼')}
-    </span>
+  const isUrl = (v) => /^https?:\/\//i.test(String(v || '').trim());
+  const field = (label, name, props = {}) => (
+    <div>
+      <label className="k-label" htmlFor={`k-${name}`}>{label}</label>
+      <input id={`k-${name}`} name={name} value={form[name]} onChange={handleChange} className="k-input" {...props} />
+    </div>
   );
 
   // -------- RENDER --------
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-800">
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto py-6 px-4">
-          <h1 className="text-3xl font-bold">Manage Keys</h1>
-        </div>
-      </header>
+    <div className="k-page">
+      <PageHeader eyebrow="Keys" title="All keys" subtitle="Every physical key, its room, owner and machine." />
 
-      <main className="max-w-7xl mx-auto py-10 px-4 space-y-8">
-        {/* FORM CARD */}
-        <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">{editMode ? 'Edit Key' : 'Add New Key'}</h2>
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Key ID + UID row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium">Key ID</label>
-                <input
-                  type="text"
-                  name="key_id"
-                  value={form.key_id}
-                  onChange={handleChange}
-                  className="mt-1 block w-full border rounded-md p-2"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium">UID</label>
-                <input
-                  type="text"
-                  name="UID"
-                  value={form.UID}
-                  onChange={handleChange}
-                  className="mt-1 block w-full border rounded-md p-2"
-                  required
-                />
-              </div>
+      <Notice>{message}</Notice>
+      <div className="space-y-6">
+        <FormPanel title={editMode ? 'Edit key' : 'Add key'} addLabel="Add key" forceOpen={editMode}>
+          <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 items-start">
+            <div className="grid grid-cols-2 gap-3">
+              {field('Key ID', 'key_id', { placeholder: 'e.g. Key 204', required: true })}
+              {field('UID (tag)', 'UID', { placeholder: 'e.g. 1D52D2EC', required: true })}
             </div>
-
-            {/* Room No */}
+            {field('Room number', 'room_number', { placeholder: 'e.g. 204' })}
+            {field('Room location (map link)', 'room_location', { placeholder: 'Paste a Google Maps link' })}
+            {field('Room address', 'room_address', { placeholder: 'Street, building, floor…' })}
             <div>
-              <label className="block text-sm font-medium">Room No</label>
-              <input
-                type="text"
-                name="room_number"
-                value={form.room_number}
+              <label className="k-label" htmlFor="k-machine">Machine</label>
+              <select
+                id="k-machine"
+                name="machine_id"
+                value={form.machine_id === null ? '' : String(form.machine_id)}
                 onChange={handleChange}
-                className="mt-1 block w-full border rounded-md p-2"
-              />
+                className="k-input"
+              >
+                <option value="">No machine</option>
+                {machines.map((m) => (
+                  <option key={m.machine_id} value={String(m.machine_id)}>
+                    {m.machine_name} ({String(m.machine_id).trim()})
+                  </option>
+                ))}
+              </select>
             </div>
-
-            {/* Room Location + Room Address */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium">Room Location</label>
-                <input
-                  type="text"
-                  name="room_location"
-                  value={form.room_location}
-                  onChange={handleChange}
-                  className="mt-1 block w-full border rounded-md p-2"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium">Room Address</label>
-                <input
-                  type="text"
-                  name="room_address"
-                  value={form.room_address}
-                  onChange={handleChange}
-                  className="mt-1 block w-full border rounded-md p-2"
-                />
-              </div>
-            </div>
-
-            {/* Machine + Owner row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium">Machine (optional)</label>
-                <select
-                  name="machine_id"
-                  value={form.machine_id === null ? '' : String(form.machine_id)}
-                  onChange={handleChange}
-                  className="mt-1 block w-full border rounded-md p-2"
-                >
-                  <option value="">-- Select Machine --</option>
-                  {machines.map((m) => (
-                    <option key={m.machine_id} value={String(m.machine_id)}>
-                      {m.machine_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Owner Search */}
+            <div className="relative">
+              <label className="k-label" htmlFor="k-owner">Owner</label>
               <div className="relative">
-                <label className="block text-sm font-medium">Owner (optional, search by name or email)</label>
                 <input
-                  type="text"
+                  id="k-owner"
                   value={ownerSearch}
                   onChange={handleOwnerSearch}
                   placeholder="Type owner name or email"
-                  className="mt-1 block w-full border rounded-md p-2"
                   autoComplete="off"
+                  className={`k-input ${selectedOwner ? '!pr-10 !border-[#1d8a3a]' : ''}`}
                 />
-                {filteredOwners.length > 0 && (
-                  <ul className="absolute z-10 bg-white border border-gray-300 rounded-md shadow max-h-40 overflow-y-auto mt-1 w-full">
-                    {filteredOwners.map((owner) => (
-                      <li
-                        key={owner.id}
-                        onClick={() => handleOwnerSelect(owner)}
-                        className="p-2 hover:bg-blue-100 cursor-pointer"
-                      >
-                        <span className="font-medium">{owner.name}</span>
-                        <span className="ml-2 text-xs text-gray-600">{owner.email}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {selectedOwner && (
-                  <div className="mt-3 p-3 bg-gray-100 rounded-md shadow">
-                    <h3 className="text-base font-semibold">{selectedOwner.name}</h3>
-                    <p className="text-sm text-gray-700">Email: {selectedOwner.email}</p>
-                    {selectedOwner.phone && <p className="text-sm text-gray-700">Phone: {selectedOwner.phone}</p>}
-                  </div>
-                )}
+                {selectedOwner && <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#1d8a3a]">✓</span>}
               </div>
-            </div>
-
-            {/* Submit buttons */}
-            <div className="flex space-x-2">
-              <button
-                type="submit"
-                disabled={loading}
-                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
-              >
-                {loading ? 'Saving...' : editMode ? 'Update Key' : 'Save Key'}
-              </button>
-              {editMode && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setForm({
-                      key_id: '',
-                      UID: '',
-                      room_number: '',
-                      room_location: '',
-                      room_address: '',
-                      machine_id: '',
-                      owner_id: ''
-                    });
-                    setEditMode(false);
-                    setEditingKeyId(null);
-                    setOwnerSearch('');
-                    setSelectedOwner(null);
-                    setMessage('');
-                  }}
-                  className="bg-gray-400 text-white px-4 py-2 rounded-md hover:bg-gray-500"
-                >
-                  Cancel
-                </button>
+              {filteredOwners.length > 0 && (
+                <ul className="absolute left-0 top-full z-20 mt-1.5 max-h-56 w-full overflow-y-auto rounded-2xl bg-white p-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.14)] border border-black/5">
+                  {filteredOwners.map((owner) => (
+                    <li key={owner.id}>
+                      <button type="button" onClick={() => handleOwnerSelect(owner)} className="w-full text-left rounded-xl px-3 py-2 hover:bg-[#f5f5f7]">
+                        <span className="font-medium">{owner.name}</span>
+                        <span className="ml-2 text-[13px] k-faint">{owner.email}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
-          </form>
-
-          {message && <p className="mt-4 text-sm text-center">{message}</p>}
-        </div>
-
-        {/* KEYS TABLE (Owner Panel–style, left-to-right order) */}
-        <div className="bg-white shadow rounded-lg p-6">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-            <h2 className="text-xl font-semibold">Existing Keys</h2>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <input
-                type="text"
-                value={tableFilter}
-                onChange={e => setTableFilter(e.target.value)}
-                placeholder="Search key_id, UID, room, owner, machine..."
-                className="p-2 border rounded-md w-72"
-              />
-
-              <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600">Owner</label>
-                <select
-                  value={ownerAssignedFilter}
-                  onChange={(e) => setOwnerAssignedFilter(e.target.value)}
-                  className="p-2 border rounded-md"
-                >
-                  <option value="all">All</option>
-                  <option value="yes">Assigned</option>
-                  <option value="no">Unassigned</option>
-                </select>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600">Machine</label>
-                <select
-                  value={machineAssignedFilter}
-                  onChange={(e) => setMachineAssignedFilter(e.target.value)}
-                  className="p-2 border rounded-md"
-                >
-                  <option value="all">All</option>
-                  <option value="yes">Assigned</option>
-                  <option value="no">Unassigned</option>
-                </select>
-              </div>
+            <div className="flex gap-2 pt-2 md:col-span-2 lg:col-span-3 md:justify-end">
+              <button type="submit" disabled={loading} className="k-btn-primary flex-1 md:flex-none md:min-w-40">
+                {loading ? 'Saving…' : editMode ? 'Save changes' : 'Add key'}
+              </button>
+              {editMode && <button type="button" onClick={resetForm} className="k-btn-secondary">Cancel</button>}
             </div>
-          </div>
+          </form>
+          
+        </FormPanel>
 
-          <div className="overflow-x-auto">
-            <table className="min-w-full border border-gray-300 rounded-lg">
-              <thead className="bg-gray-100">
-                <tr>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
-                    <SortLabel field="key_id">Key ID</SortLabel>
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
-                    <SortLabel field="UID">UID</SortLabel>
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
-                    <SortLabel field="room_number">Room No</SortLabel>
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
-                    <SortLabel field="room_location">Room Location</SortLabel>
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
-                    <SortLabel field="room_address">Room Address</SortLabel>
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
-                    <SortLabel field="machine">Machine</SortLabel>
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
-                    <SortLabel field="owner">Owner</SortLabel>
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-right">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleKeys.map((k) => {
-                  const m = getMachine(k.machine_id);
-                  const o = getOwner(k.owner_id);
-                  return (
-                    <tr key={k.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 border border-gray-300">{k.key_id}</td>
-                      <td className="px-4 py-3 border border-gray-300">{k.UID}</td>
-                      <td className="px-4 py-3 border border-gray-300">{k.room_number || '—'}</td>
-                      <td className="px-4 py-3 border border-gray-300">{k.room_location || '—'}</td>
-                      <td className="px-4 py-3 border border-gray-300">{k.room_address || '—'}</td>
-                      <td className="px-4 py-3 border border-gray-300">
-                        {m ? `${m.machine_name} (${k.machine_id})` : (k.machine_id ?? '—')}
-                      </td>
-                      <td className="px-4 py-3 border border-gray-300">
-                        {o ? `${o.name}${o.email ? ' • ' + o.email : ''}` : '—'}
-                      </td>
-                      <td className="px-4 py-3 border border-gray-300 text-right">
-                        <div className="inline-flex gap-2">
-                          <button
-                            onClick={() => handleEdit(k)}
-                            className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => handleDelete(k.id)}
-                            className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {visibleKeys.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="text-center text-gray-400 py-4">
-                      No keys found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </main>
+        <DataTable
+          title="Keys"
+          rows={keys}
+          loading={!loaded}
+          exportName="keys"
+          searchPlaceholder="Search key, UID, room, owner, machine"
+          defaultSort={{ key: "key_id", dir: "asc" }}
+          emptyText="No keys yet. Add your first one."
+          filters={[
+            { key: "all", label: "All", test: () => true },
+            { key: "unassigned", label: "No owner", test: (k) => !k.owner_id },
+            { key: "nomachine", label: "No machine", test: (k) => !k.machine_id },
+            { key: "relink", label: "Unknown machine", test: (k) => !!k.machine_id && !getMachine(k.machine_id) },
+          ]}
+          columns={[
+            { key: "key_id", header: "Key", mobile: "title", cell: (k) => <span className="font-medium">{k.key_id}</span> },
+            { key: "UID", header: "UID", cell: (k) => (k.UID ? <code className="text-[12px] k-muted">{k.UID}</code> : null) },
+            { key: "room_number", header: "Room", mobile: "subtitle" },
+            {
+              key: "room",
+              header: "Address",
+              value: (k) => k.room_address || (isUrl(k.room_location) ? "" : k.room_location),
+              cell: (k) => (
+                <div className="max-w-[220px]">
+                  {k.room_address && <div>{k.room_address}</div>}
+                  {isUrl(k.room_location) ? (
+                    <a href={k.room_location} target="_blank" rel="noopener noreferrer" className="k-link text-[13px]">Open map ↗</a>
+                  ) : (
+                    k.room_location && <div className="text-[13px] k-muted">{k.room_location}</div>
+                  )}
+                </div>
+              ),
+            },
+            {
+              key: "machine",
+              header: "Machine",
+              value: (k) => { const m = getMachine(k.machine_id); return m ? `${m.machine_name || ""} ${m.machine_id}` : ""; },
+              cell: (k) => {
+                if (!k.machine_id) return <span className="k-faint">None</span>;
+                const m = getMachine(k.machine_id);
+                if (!m) return <span className="k-badge-orange">Unknown · relink</span>;
+                return (<><div>{m.machine_name}</div><div className="text-[12px] k-faint">{String(m.machine_id).trim()}</div></>);
+              },
+            },
+            {
+              key: "owner",
+              header: "Owner",
+              value: (k) => getOwner(k.owner_id)?.name || "",
+              cell: (k) => {
+                const o = getOwner(k.owner_id);
+                return o ? (<><div>{o.name}</div><div className="text-[12px] k-faint">{o.email}</div></>) : <span className="k-faint">None</span>;
+              },
+            },
+          ]}
+          rowClassName={(k) => (k.id === editingKeyId ? "!bg-[#e8f2fd]" : "")}
+          rowActions={(k) => (
+            <>
+              <RowAction onClick={() => { handleEdit(k); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Edit</RowAction>
+              <RowAction tone="danger" onClick={() => handleDelete(k.id)}>Delete</RowAction>
+            </>
+          )}
+        />
+      </div>
     </div>
   );
 }

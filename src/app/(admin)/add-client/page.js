@@ -2,6 +2,9 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/utils/supabaseClient";
 import { authHeaders } from "@/utils/requireRole";
+import DataTable, { RowAction, toDate, fmtDate } from "@/components/DataTable";
+import PageHeader, { Notice, FormPanel } from "@/components/PageHeader";
+import { guestStatus, GUEST_FILTERS, STATUS_BADGE } from "@/utils/guestStatus";
 
 export default function AddClientPage() {
   const [form, setForm] = useState({
@@ -14,13 +17,10 @@ export default function AddClientPage() {
   const [filteredOwners, setFilteredOwners] = useState([]);
   const [ownerSearch, setOwnerSearch] = useState('');
   const [selectedOwner, setSelectedOwner] = useState(null);
-  const [filter, setFilter] = useState('current');
   const [message, setMessage] = useState('');
   const [editMode, setEditMode] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [tableFilter, setTableFilter] = useState('');
-  const [sortField, setSortField] = useState('check_in');
-  const [sortDir, setSortDir] = useState('asc');
+  const [loaded, setLoaded] = useState(false);
   const [slotPresence, setSlotPresence] = useState([]); // NEW
 
   const platforms = [
@@ -51,6 +51,7 @@ export default function AddClientPage() {
       .order('check_in', { ascending: false })
       .order('id', { ascending: false });
     if (!error) setClients(data || []);
+    setLoaded(true);
   };
 
   // includes slot_number now
@@ -75,6 +76,7 @@ export default function AddClientPage() {
       .select('machine_id, slot_number, UID');
     setSlotPresence(data || []);
   };
+
 
   // MATCHED to your other file:
   // - If checkOut is date-only, append T11:00:00
@@ -268,81 +270,6 @@ export default function AddClientPage() {
     }
   };
 
-  // Helper: get key info for a client
-  const getKeyInfo = (client) => {
-    const key = keys.find(k => k.uuid === client.key_id);
-    return key ? `${key.room_number || ''} (UID: ${key.UID || key.uuid})` : '';
-  };
-
-  // Filtering and sorting clients list
-  function getFirstName(client) {
-    if (client.first_name) return client.first_name;
-    if (client.name) return client.name.split(' ')[0];
-    return '';
-  }
-  function getLastName(client) {
-    if (client.last_name) return client.last_name;
-    if (client.name) return client.name.split(' ').slice(1).join(' ');
-    return '';
-  }
-
-  // MATCHED to your other file:
-  // - today = new Date().toISOString().split('T')[0] (UTC-based string)
-  // - 'current': ci <= today && co >= today (no extra guards)
-  const filterClients = () => {
-    const today = new Date().toISOString().split('T')[0];
-
-    let filtered = clients.filter(client => {
-      const ci = (client.check_in || '').slice(0, 10);
-      const co = (client.check_out || '').slice(0, 10);
-      if (filter === 'current') return ci <= today && co >= today;
-      if (filter === 'coming')  return ci > today;
-      if (filter === 'past')    return co < today;
-      return true;
-    });
-
-    if (tableFilter.trim()) {
-      const f = tableFilter.trim().toLowerCase();
-      filtered = filtered.filter(client =>
-        (client.first_name || '').toLowerCase().includes(f) ||
-        (client.last_name || '').toLowerCase().includes(f) ||
-        (client.email || '').toLowerCase().includes(f) ||
-        (client.phone || '').toLowerCase().includes(f) ||
-        (client.check_in || '').toLowerCase().includes(f) ||
-        (client.check_out || '').toLowerCase().includes(f) ||
-        getKeyInfo(client).toLowerCase().includes(f) ||
-        (client.platform || '').toLowerCase().includes(f)
-      );
-    }
-
-    const sorters = {
-      check_in: client => client.check_in || '',
-      check_out: client => client.check_out || '',
-      full_name: client => ((client.first_name || '') + ' ' + (client.last_name || '')).toLowerCase(),
-      key_info: client => getKeyInfo(client).toLowerCase(),
-      email: client => (client.email || '').toLowerCase(),
-      phone: client => (client.phone || '').toLowerCase(),
-      platform: client => (client.platform || '').toLowerCase(),
-    };
-
-    if (sortField && sorters[sortField]) {
-      filtered.sort((a,b) => {
-        let va = sorters[sortField](a);
-        let vb = sorters[sortField](b);
-        if (va < vb) return sortDir === 'asc' ? -1 : 1;
-        if (va > vb) return sortDir === 'asc' ? 1 : -1;
-        return 0;
-      });
-    }
-
-    return filtered;
-  };
-
-  const handleSort = (field) => {
-    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortField(field); setSortDir('asc'); }
-  };
-
   // Owner search handlers (unchanged)
   const handleOwnerSearch = async (e) => {
     const value = e.target.value || '';
@@ -395,353 +322,149 @@ export default function AddClientPage() {
     );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50 text-gray-800">
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto py-6 px-4">
-          <h1 className="text-3xl font-bold">Add Client</h1>
-        </div>
-      </header>
+  const resetForm = () => {
+    setForm({ firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: '', platform: '' });
+    setEditMode(false);
+    setEditingId(null);
+    setSelectedOwner(null);
+    setOwnerSearch('');
+    setMessage('');
+  };
 
-      <main className="max-w-7xl mx-auto py-10 px-4 space-y-8">
-        <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">{editMode ? 'Edit Client' : 'Add New Client'}</h2>
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* First Name */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700">First Name</label>
-              <input
-                type="text"
-                name="firstName"
-                value={form.firstName}
-                onChange={handleChange}
-                required
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-              />
+  const keyFor = (c) => keys.find(k => k.uuid === c.key_id);
+  const ownerKeys = selectedOwner ? keys.filter(k => String(k.owner_id) === String(selectedOwner.id)) : keys;
+  const input = (label, name, props = {}) => (
+    <div>
+      <label className="k-label" htmlFor={`c-${name}`}>{label}</label>
+      <input id={`c-${name}`} name={name} value={form[name]} onChange={handleChange} className="k-input" {...props} />
+    </div>
+  );
+
+  return (
+    <div className="k-page">
+      <PageHeader eyebrow="Guests" title="Guests & pickups" subtitle="Add bookings and send pickup links." />
+
+      <Notice>{message}</Notice>
+      <div className="space-y-6">
+        <FormPanel title={editMode ? 'Edit guest' : 'Add guest'} addLabel="Add guest" forceOpen={editMode}>
+          <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 items-start">
+            <div className="grid grid-cols-2 gap-3">
+              {input('First name', 'firstName', { required: true })}
+              {input('Last name', 'lastName', { required: true })}
             </div>
-            {/* Last Name */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Last Name</label>
-              <input
-                type="text"
-                name="lastName"
-                value={form.lastName}
-                onChange={handleChange}
-                required
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-              />
-            </div>
-            {/* Email */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Email</label>
-              <input
-                type="email"
-                name="email"
-                value={form.email}
-                onChange={handleChange}
-                required
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-              />
-            </div>
-            {/* Phone */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Phone No</label>
-              <input
-                type="text"
-                name="phone"
-                value={form.phone}
-                onChange={handleChange}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-              />
-            </div>
-            {/* Owner Search */}
-            <div className="md:col-span-2 relative">
-              <label className="block text-sm font-medium text-gray-700">Link to Owner (Search by Email or Name)</label>
-              <input
-                type="text"
-                value={ownerSearch}
-                onChange={handleOwnerSearch}
-                placeholder="Type owner's email"
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-                autoComplete="off"
-              />
+            {input('Email', 'email', { type: 'email', required: true, placeholder: 'guest@example.com' })}
+            {input('Phone', 'phone', { placeholder: '+20 …' })}
+
+            <div className="relative">
+              <label className="k-label" htmlFor="c-owner">Owner</label>
+              <div className="relative">
+                <input
+                  id="c-owner"
+                  value={ownerSearch}
+                  onChange={handleOwnerSearch}
+                  placeholder="Search owner name or email"
+                  className={`k-input ${selectedOwner ? '!pr-10 !border-[#1d8a3a]' : ''}`}
+                  autoComplete="off"
+                />
+                {selectedOwner && <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#1d8a3a]">✓</span>}
+              </div>
               {filteredOwners.length > 0 && (
-                <ul className="absolute z-10 bg-white border border-gray-300 rounded-md shadow max-h-40 overflow-y-auto mt-1 w-full">
+                <ul className="absolute left-0 top-full z-20 mt-1.5 max-h-56 w-full overflow-y-auto rounded-2xl bg-white p-1.5 shadow-[0_12px_40px_rgba(0,0,0,0.14)] border border-black/5">
                   {filteredOwners.map((owner) => (
-                    <li
-                      key={owner.id}
-                      onClick={() => handleOwnerSelect(owner)}
-                      className="p-2 hover:bg-blue-100 cursor-pointer"
-                    >
-                      <span className="font-medium">{owner.name}</span>
-                      <span className="ml-2 text-xs text-gray-600">{owner.email}</span>
+                    <li key={owner.id}>
+                      <button type="button" onClick={() => handleOwnerSelect(owner)} className="w-full text-left rounded-xl px-3 py-2 hover:bg-[#f5f5f7]">
+                        <span className="font-medium">{owner.name}</span>
+                        <span className="ml-2 text-[13px] k-faint">{owner.email}</span>
+                      </button>
                     </li>
                   ))}
                 </ul>
               )}
-              {selectedOwner && (
-                <div className="mt-3 p-4 bg-gray-100 rounded-md shadow">
-                  <h3 className="text-lg font-semibold">{selectedOwner.name}</h3>
-                  <p>Email: {selectedOwner.email}</p>
-                  <p>Phone: {selectedOwner.phone}</p>
-                </div>
-              )}
             </div>
 
-            {/* Key Dropdown */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Room No / Key</label>
-              <select
-                name="keyId"
-                value={form.keyId}
-                onChange={handleChange}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-                disabled={!selectedOwner && !editMode}
-                required
-              >
-                <option value="">Select key for owner</option>
-                {selectedOwner
-                  ? keys
-                      .filter(k => String(k.owner_id) === String(selectedOwner.id))
-                      .map(k => (
-                        <option key={k.uuid} value={k.uuid}>
-                          {k.room_number} (UID: {k.UID || k.uuid})
-                        </option>
-                      ))
-                  : keys.map(k => (
-                      <option key={k.uuid} value={k.uuid}>
-                        {k.room_number} (UID: {k.UID || k.uuid})
-                      </option>
-                    ))}
+              <label className="k-label" htmlFor="c-key">Room / key</label>
+              <select id="c-key" name="keyId" value={form.keyId} onChange={handleChange} className="k-input" disabled={!selectedOwner && !editMode} required>
+                <option value="">{selectedOwner || editMode ? 'Select a key' : 'Choose an owner first'}</option>
+                {ownerKeys.map(k => (
+                  <option key={k.uuid} value={k.uuid}>Room {k.room_number} · {k.UID || k.uuid}</option>
+                ))}
               </select>
             </div>
 
-            {/* Platform */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Platform</label>
-              <input
-                list="platform-options"
-                name="platform"
-                value={form.platform}
-                onChange={handleChange}
-                placeholder="Select or type platform"
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-                required
-              />
+              <label className="k-label" htmlFor="c-platform">Platform</label>
+              <input id="c-platform" list="platform-options" name="platform" value={form.platform} onChange={handleChange} placeholder="Airbnb, Booking.com…" className="k-input" required />
               <datalist id="platform-options">
-                {platforms.map((p, idx) => (
-                  <option key={idx} value={p} />
-                ))}
+                {platforms.map((p, idx) => <option key={idx} value={p} />)}
                 <option value="Other" />
               </datalist>
             </div>
 
-            {/* Check-in/Check-out SIDE BY SIDE */}
-            <div className="flex gap-2 col-span-1 md:col-span-2">
-              <div className="w-1/2">
-                <label className="block text-sm font-medium text-gray-700">Check-In Date & Time</label>
-                <input
-                  type="datetime-local"
-                  name="checkIn"
-                  value={form.checkIn}
-                  onChange={handleChange}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-                />
-              </div>
-              <div className="w-1/2">
-                <label className="block text-sm font-medium text-gray-700">Check-Out Date</label>
-                <input
-                  type="date"
-                  name="checkOut"
-                  value={form.checkOut ? form.checkOut.slice(0, 10) : ""}
-                  onChange={handleChange}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-                />
+            <div className="grid grid-cols-2 gap-3">
+              {input('Check-in', 'checkIn', { type: 'datetime-local' })}
+              <div>
+                <label className="k-label" htmlFor="c-checkOut">Check-out</label>
+                <input id="c-checkOut" type="date" name="checkOut" value={form.checkOut ? form.checkOut.slice(0, 10) : ""} onChange={handleChange} className="k-input" />
               </div>
             </div>
 
-            {/* Buttons */}
-            <div className="md:col-span-2 flex gap-3">
-              <button
-                type="submit"
-                className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition"
-              >
-                {editMode ? 'Update Client' : 'Save Client'}
-              </button>
-              {editMode && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setForm({ firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: '', platform: '' });
-                    setEditMode(false);
-                    setEditingId(null);
-                    setSelectedOwner(null);
-                    setOwnerSearch('');
-                    setMessage('');
-                  }}
-                  className="w-full px-4 py-2 bg-gray-400 text-white rounded-md hover:bg-gray-500 transition"
-                >
-                  Cancel
-                </button>
-              )}
+            <div className="flex gap-2 pt-2 md:col-span-2 lg:col-span-3 md:justify-end">
+              <button type="submit" className="k-btn-primary flex-1 md:flex-none md:min-w-40">{editMode ? 'Save changes' : 'Add guest'}</button>
+              {editMode && <button type="button" onClick={resetForm} className="k-btn-secondary">Cancel</button>}
             </div>
-            {message && (
-              <p
-                className={`mt-4 text-center text-sm col-span-2 ${
-                  message.startsWith("❌")
-                    ? "font-bold text-red-600"
-                    : "text-green-700"
-                }`}
-              >
-                {message}
-              </p>
-            )}
           </form>
-        </div>
+          
+        </FormPanel>
 
-        {/* Clients Table */}
-        <div className="bg-white shadow rounded-lg p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold">📋 Existing Clients</h2>
-            <div className="space-x-2">
-              {["current", "coming", "past"].map((key) => (
-                <button
-                  key={key}
-                  onClick={() => setFilter(key)}
-                  className={`px-3 py-1 rounded ${filter === key ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
-                >
-                  {key[0].toUpperCase() + key.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="my-2">
-            <input
-              type="text"
-              value={tableFilter}
-              onChange={e => setTableFilter(e.target.value)}
-              placeholder="Search by name, room, email, UID, etc"
-              className="p-2 border rounded-md w-64"
-            />
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-full border border-gray-300 rounded-lg">
-              <thead className="bg-gray-100">
-                <tr>
-                  <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
-                    START PICKUP
-                  </th>
-                  <th
-                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
-                    onClick={() => handleSort('full_name')}
-                  >
-                    FULL NAME {sortField === 'full_name' && (sortDir === 'asc' ? '▲' : '▼')}
-                  </th>
-                  <th
-                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
-                    onClick={() => handleSort('key_info')}
-                  >
-                    ROOM / UID {sortField === 'key_info' && (sortDir === 'asc' ? '▲' : '▼')}
-                  </th>
-                  <th
-                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
-                    onClick={() => handleSort('platform')}
-                  >
-                    PLATFORM {sortField === 'platform' && (sortDir === 'asc' ? '▲' : '▼')}
-                  </th>
-                  <th
-                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left w-48 cursor-pointer"
-                    onClick={() => handleSort('check_in')}
-                  >
-                    CHECK-IN {sortField === 'check_in' && (sortDir === 'asc' ? '▲' : '▼')}
-                  </th>
-                  <th
-                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left w-48 cursor-pointer"
-                    onClick={() => handleSort('check_out')}
-                  >
-                    CHECK-OUT {sortField === 'check_out' && (sortDir === 'asc' ? '▲' : '▼')}
-                  </th>
-                  <th
-                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
-                    onClick={() => handleSort('email')}
-                  >
-                    EMAIL {sortField === 'email' && (sortDir === 'asc' ? '▲' : '▼')}
-                  </th>
-                  <th
-                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
-                    onClick={() => handleSort('phone')}
-                  >
-                    PHONE {sortField === 'phone' && (sortDir === 'asc' ? '▲' : '▼')}
-                  </th>
-                  <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-right">
-                    ACTIONS
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {filterClients().map((client, index) => (
-                  <tr key={index} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 border border-gray-300 text-left">
-                      {(['current', 'coming'].includes(filter)) && (
-                        <button
-                          onClick={() => handleStartPickup(client)}
-                          className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md text-white bg-teal-600 hover:bg-teal-700"
-                        >
-                          Start Pickup
-                        </button>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 border border-gray-300">
-                      {(client.first_name || '') + ' ' + (client.last_name || '')}
-                    </td>
-                    <td className="px-6 py-4 border border-gray-300">{getKeyInfo(client)}</td>
-                    <td className="px-6 py-4 border border-gray-300">{client.platform || '-'}</td>
-                    <td className="px-6 py-4 border border-gray-300 w-48">
-                      <div>
-                        {client.check_in?.slice(0, 10)}
-                        <div className="text-xs text-gray-500">{client.check_in?.slice(11, 16)}</div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 border border-gray-300 w-48">
-                      <div>
-                        {client.check_out?.slice(0, 10)}
-                        <div className="text-xs text-gray-500">{client.check_out?.slice(11, 16)}</div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-3 border border-gray-300">{client.email}</td>
-                    <td className="px-6 py-4 border border-gray-300">{client.phone}</td>
-                    <td className="px-6 py-4 border border-gray-300">
-                      <div className="flex flex-row gap-2 justify-end">
-                        <button
-                          onClick={() => handleEdit(client)}
-                          className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDelete(client.id)}
-                          className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {filterClients().length === 0 && (
-                  <tr>
-                    <td colSpan={9} className="text-center text-gray-400 py-4">
-                      No clients found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </main>
+        <DataTable
+          title="Guests"
+          rows={clients}
+          loading={!loaded}
+          exportName="guests"
+          searchPlaceholder="Search name, room, email, phone"
+          filters={GUEST_FILTERS}
+          defaultSort={{ key: "check_in", dir: "asc" }}
+          emptyText="No guests in this view."
+          columns={[
+            {
+              key: "name",
+              header: "Guest",
+              mobile: "title",
+              nowrap: true,
+              value: (c) => `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+              cell: (c) => <span className="font-medium">{`${c.first_name || ''} ${c.last_name || ''}`.trim()}</span>,
+            },
+            {
+              key: "room",
+              header: "Room",
+              mobile: "subtitle",
+              value: (c) => keyFor(c)?.room_number || "",
+              cell: (c) => { const k = keyFor(c); return k ? (<><div>Room {k.room_number}</div><div className="text-[12px] k-faint">{k.UID}</div></>) : null; },
+            },
+            { key: "status", header: "Status", value: (c) => STATUS_BADGE[guestStatus(c)][1], cell: (c) => { const [cls, label] = STATUS_BADGE[guestStatus(c)]; return <span className={cls}>{label}</span>; } },
+            { key: "check_in", header: "Check-in", nowrap: true, value: (c) => toDate(c.check_in), cell: (c) => fmtDate(c.check_in) },
+            { key: "check_out", header: "Check-out", nowrap: true, value: (c) => toDate(c.check_out), cell: (c) => fmtDate(c.check_out) },
+            { key: "platform", header: "Platform" },
+            {
+              key: "contact",
+              header: "Contact",
+              value: (c) => [c.email, c.phone].filter(Boolean).join(" · "),
+              cell: (c) => (<><div className="max-w-[200px] truncate" title={c.email}>{c.email}</div>{c.phone && <div className="text-[12px] k-faint">{c.phone}</div>}</>),
+            },
+          ]}
+          rowClassName={(c) => (c.id === editingId ? "!bg-[#e8f2fd]" : "")}
+          rowActions={(c) => (
+            <>
+              {['current', 'upcoming'].includes(guestStatus(c)) && (
+                <RowAction tone="primary" onClick={() => handleStartPickup(c)}>Start pickup</RowAction>
+              )}
+              <RowAction onClick={() => { handleEdit(c); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Edit</RowAction>
+              <RowAction tone="danger" onClick={() => handleDelete(c.id)}>Delete</RowAction>
+            </>
+          )}
+        />
+      </div>
     </div>
   );
 }
