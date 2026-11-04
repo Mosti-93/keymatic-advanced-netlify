@@ -1,6 +1,8 @@
 'use client';
 import { useState, useEffect } from "react";
 import { supabase } from "@/utils/supabaseClient";
+import DataTable, { RowAction, toDate, fmtDate } from "@/components/DataTable";
+import PageHeader, { Notice, FormPanel } from "@/components/PageHeader";
 
 export default function CreateOwnerPage() {
   const [form, setForm] = useState({ name: '', email: '', phone: '', country: '' });
@@ -8,6 +10,7 @@ export default function CreateOwnerPage() {
   const [editMode, setEditMode] = useState(false);
   const [editingUserId, setEditingUserId] = useState(null);
   const [message, setMessage] = useState('');
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     fetchOwners();
@@ -26,6 +29,7 @@ export default function CreateOwnerPage() {
     } else {
       setOwners(data);
     }
+    setLoaded(true);
   };
 
   const handleChange = (e) => {
@@ -111,108 +115,73 @@ export default function CreateOwnerPage() {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gray-50 text-gray-800">
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-          <h1 className="text-3xl font-bold text-gray-900">👤 Manage Owners</h1>
-        </div>
-      </header>
+  const resetForm = () => {
+    setForm({ name: '', email: '', phone: '', country: '' });
+    setEditMode(false);
+    setEditingUserId(null);
+    setMessage('');
+  };
 
-      <main className="max-w-7xl mx-auto py-10 px-4 space-y-8">
-        <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">{editMode ? 'Edit Owner' : 'Edit Owner'}</h2>
-          <form onSubmit={handleSubmit} className="space-y-4">
+  return (
+    <div className="k-page">
+      <PageHeader eyebrow="Owners" title="Property owners" subtitle="The people whose keys live in your machines." />
+
+      <Notice>{message}</Notice>
+      <div className="space-y-6">
+        <FormPanel title={editMode ? 'Edit owner' : 'Add owner'} addLabel="Add owner" forceOpen={editMode}>
+          <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 items-start">
             {[
-              { label: "Owner Name", name: "name", type: "text" },
-              { label: "Email", name: "email", type: "email" },
-              { label: "Phone", name: "phone", type: "tel" },
-              { label: "Country", name: "country", type: "text" }
-            ].map(({ label, name, type }) => (
+              { label: "Name", name: "name", type: "text", ph: "Full name" },
+              { label: "Email", name: "email", type: "email", ph: "name@example.com" },
+              { label: "Phone", name: "phone", type: "tel", ph: "+20 …" },
+              { label: "Country", name: "country", type: "text", ph: "Egypt" }
+            ].map(({ label, name, type, ph }) => (
               <div key={name}>
-                <label className="block text-sm font-medium text-gray-700">{label}</label>
+                <label className="k-label" htmlFor={`owner-${name}`}>{label}</label>
                 <input
+                  id={`owner-${name}`}
                   type={type}
                   name={name}
                   value={form[name]}
                   onChange={handleChange}
-                  className="mt-1 block w-full border rounded-md p-2"
+                  placeholder={ph}
+                  className="k-input"
                   required={name === "name"}
                 />
               </div>
             ))}
-
-            <div className="flex space-x-2">
-              <button
-                type="submit"
-                className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
-              >
-                {editMode ? 'Update Owner' : 'Save Owner'}
-              </button>
-              {editMode && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setForm({ name: '', email: '', phone: '', country: '' });
-                    setEditMode(false);
-                    setEditingUserId(null);
-                    setMessage('');
-                  }}
-                  className="bg-gray-400 text-white px-4 py-2 rounded-md hover:bg-gray-500"
-                >
-                  Cancel
-                </button>
-              )}
+            <div className="flex gap-2 pt-2 md:col-span-2 lg:col-span-3 md:justify-end">
+              <button type="submit" className="k-btn-primary flex-1 md:flex-none md:min-w-40">{editMode ? 'Save changes' : 'Add owner'}</button>
+              {editMode && <button type="button" onClick={resetForm} className="k-btn-secondary">Cancel</button>}
             </div>
           </form>
-          {message && <p className="mt-4 text-sm text-center">{message}</p>}
-        </div>
+          
+        </FormPanel>
 
-        <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">📋 Existing Owners</h2>
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-100">
-              <tr>
-                {["Name", "Email", "Phone", "Country", "Actions"].map((col) => (
-                  <th key={col} className={`px-4 py-2 text-xs font-medium text-gray-500 uppercase tracking-wider ${col === "Actions" ? "text-right" : "text-left"}`}>
-                    {col}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {owners.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-2 text-center text-gray-500">No owners found.</td>
-                </tr>
-              ) : (
-                owners.map((o) => (
-                  <tr key={o.id}>
-                    <td className="px-4 py-2">{o.name}</td>
-                    <td className="px-4 py-2">{o.email}</td>
-                    <td className="px-4 py-2">{o.phone}</td>
-                    <td className="px-4 py-2">{o.country}</td>
-                    <td className="px-4 py-2 space-x-2 text-right">
-                      <button
-                        onClick={() => handleEdit(o)}
-                        className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(o.id)}
-                        className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700"
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </main>
+        <DataTable
+          title="All owners"
+          rows={owners}
+          loading={!loaded}
+          exportName="owners"
+          searchPlaceholder="Search owners"
+          defaultSort={{ key: "name", dir: "asc" }}
+          emptyText="No owners yet. Add your first one."
+          columns={[
+            { key: "name", header: "Name", mobile: "title", cell: (o) => <span className="font-medium">{o.name}</span> },
+            { key: "email", header: "Email", mobile: "subtitle" },
+            { key: "phone", header: "Phone" },
+            { key: "country", header: "Country" },
+            { key: "last_login", header: "Last sign in", value: (o) => toDate(o.last_login), cell: (o) => (o.last_login ? fmtDate(o.last_login) : "Never") },
+          ]}
+          rowClassName={(o) => (o.id === editingUserId ? "!bg-[#e8f2fd]" : "")}
+          rowActions={(o) => (
+            <>
+              <RowAction onClick={() => handleEdit(o)}>Edit</RowAction>
+              <RowAction tone="danger" onClick={() => handleDelete(o.id)}>Delete</RowAction>
+            </>
+          )}
+        />
+      </div>
     </div>
   );
 }

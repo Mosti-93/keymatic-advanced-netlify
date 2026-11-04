@@ -1,26 +1,138 @@
 @import "tailwindcss";
 
+/* ───────────────────────── Keymatic design system ─────────────────────────
+   Calm, Apple-inspired: system type, generous space, soft cards, one accent.
+   Use the k-* classes below on new UI so every page looks like one product.  */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+  --k-bg: #f5f5f7;
+  --k-surface: #ffffff;
+  --k-text: #1d1d1f;
+  --k-text-2: #6e6e73;
+  --k-text-3: #86868b;
+  --k-line: #e5e5ea;
+  --k-accent: #0071e3;
+  --k-accent-hover: #0077ed;
+  --k-accent-soft: #e8f2fd;
+  --k-green: #1d8a3a;
+  --k-green-soft: #e7f6ec;
+  --k-red: #d70015;
+  --k-red-soft: #fdecee;
+  --k-orange: #b25000;
+  --k-orange-soft: #fff4e5;
+  --k-radius: 18px;
+  --k-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
+  --k-shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.04), 0 24px 60px rgba(0, 0, 0, 0.10);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", var(--font-inter), "Helvetica Neue", Arial, sans-serif;
+  --color-k-accent: var(--k-accent);
+  --color-k-text: var(--k-text);
+  --color-k-text-2: var(--k-text-2);
+  --color-k-bg: var(--k-bg);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--k-bg);
+  color: var(--k-text);
+  font-family: var(--font-sans);
+  letter-spacing: -0.01em;
+}
+
+::selection {
+  background: var(--k-accent-soft);
+}
+
+@layer components {
+  /* Layout */
+  .k-page { @apply mx-auto w-full max-w-6xl px-5 sm:px-8 py-10 sm:py-14; }
+  .k-eyebrow { @apply text-sm font-semibold tracking-wide; color: var(--k-accent); }
+  .k-title { @apply text-4xl sm:text-5xl font-semibold tracking-tight; color: var(--k-text); letter-spacing: -0.03em; }
+  .k-h2 { @apply text-2xl font-semibold tracking-tight; letter-spacing: -0.02em; }
+  .k-subtitle { @apply mt-3 text-lg sm:text-xl; color: var(--k-text-2); }
+  .k-muted { color: var(--k-text-2); }
+  .k-faint { color: var(--k-text-3); }
+
+  /* Surfaces */
+  .k-card { background: var(--k-surface); border-radius: var(--k-radius); box-shadow: var(--k-shadow); @apply p-6 sm:p-8; }
+  .k-card-flat { background: var(--k-surface); border-radius: var(--k-radius); border: 1px solid var(--k-line); @apply p-6; }
+  .k-tile {
+    background: var(--k-surface); border-radius: var(--k-radius); box-shadow: var(--k-shadow);
+    @apply block p-6 transition duration-300 ease-out;
+  }
+  .k-tile:hover { box-shadow: var(--k-shadow-lg); transform: translateY(-2px); }
+
+  /* Buttons */
+  .k-btn, .k-btn-primary, .k-btn-secondary, .k-btn-ghost, .k-btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-[15px] font-medium
+           transition duration-200 ease-out select-none disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  :is(.k-btn, .k-btn-primary, .k-btn-secondary, .k-btn-ghost, .k-btn-danger):active:not(:disabled) { transform: scale(0.98); }
+  .k-btn-primary { color: #fff; background: var(--k-accent); }
+  .k-btn-primary:hover:not(:disabled) { background: var(--k-accent-hover); }
+  .k-btn-secondary { background: #e8e8ed; color: var(--k-text); }
+  .k-btn-secondary:hover:not(:disabled) { background: #dedee3; }
+  .k-btn-ghost { color: var(--k-accent); }
+  .k-btn-ghost:hover:not(:disabled) { background: var(--k-accent-soft); }
+  .k-btn-danger { background: var(--k-red-soft); color: var(--k-red); }
+  .k-btn-danger:hover:not(:disabled) { background: #fbdfe2; }
+  .k-btn-lg { @apply px-7 py-3.5 text-[17px]; }
+  .k-btn-block { @apply w-full; }
+  .k-link { color: var(--k-accent); @apply font-medium hover:underline underline-offset-4; }
+
+  /* Forms */
+  .k-label { @apply block text-[13px] font-medium mb-1.5; color: var(--k-text-2); }
+  .k-input {
+    @apply block w-full rounded-xl px-4 py-3 text-[16px] outline-none transition duration-150;
+    background: #fff; border: 1px solid #d2d2d7; color: var(--k-text);
+  }
+  .k-input::placeholder { color: var(--k-text-3); }
+  .k-input:focus { border-color: var(--k-accent); box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.15); }
+
+  /* Feedback */
+  .k-alert, .k-alert-error, .k-alert-success, .k-alert-info { @apply rounded-2xl px-4 py-3 text-[15px]; }
+  .k-alert-error { background: var(--k-red-soft); color: var(--k-red); }
+  .k-alert-success { background: var(--k-green-soft); color: var(--k-green); }
+  .k-alert-info { background: var(--k-accent-soft); color: #0058b0; }
+
+  .k-badge, .k-badge-green, .k-badge-blue, .k-badge-gray, .k-badge-red, .k-badge-orange { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium; }
+  .k-badge-green { background: var(--k-green-soft); color: var(--k-green); }
+  .k-badge-blue { background: var(--k-accent-soft); color: #0058b0; }
+  .k-badge-gray { background: #f0f0f3; color: var(--k-text-2); }
+  .k-badge-red { background: var(--k-red-soft); color: var(--k-red); }
+  .k-badge-orange { background: var(--k-orange-soft); color: var(--k-orange); }
+
+  /* Tables */
+  .k-table { @apply w-full text-left text-[14px]; border-collapse: separate; border-spacing: 0; }
+  .k-table thead th {
+    @apply px-3 py-3 text-[12px] font-medium uppercase tracking-wide whitespace-nowrap;
+    color: var(--k-text-3); border-bottom: 1px solid var(--k-line);
+  }
+  .k-table tbody td { @apply px-3 py-3.5 align-top; border-bottom: 1px solid var(--k-line); }
+  .k-table tbody tr:last-child td { border-bottom: 0; }
+  .k-table tbody tr { @apply transition-colors; }
+  .k-table tbody tr:hover { background: #fafafc; }
+
+  /* Motion */
+  .k-fade-in { animation: k-fade-in 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .k-fade-in-2 { animation: k-fade-in 0.6s 0.08s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+  .k-fade-in-3 { animation: k-fade-in 0.6s 0.16s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+}
+
+@keyframes k-fade-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .k-fade-in, .k-fade-in-2, .k-fade-in-3 { animation: none; }
+  .k-tile:hover { transform: none; }
 }

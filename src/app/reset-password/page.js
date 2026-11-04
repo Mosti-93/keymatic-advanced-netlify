@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/utils/supabaseClient";
+import AuthCard from "@/components/AuthCard";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -42,32 +43,28 @@ export default function ResetPasswordPage() {
     setSubmitting(false);
   };
 
+  const isError = message.startsWith("Failed");
   return (
-    <div className="min-h-screen flex items-center justify-center bg-white">
-      <div className="bg-white shadow rounded-lg p-8 max-w-md w-full text-black">
-        <h1 className="text-2xl font-bold text-center mb-6">Reset Password</h1>
-        <form onSubmit={handleReset} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium">New Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              placeholder="Enter new password"
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-              required
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition"
-          >
-            {submitting ? "Updating..." : "Update Password"}
-          </button>
-        </form>
-        {message && <div className="text-center mt-4">{message}</div>}
-      </div>
-    </div>
+    <AuthCard title="Choose a new password" subtitle="Use at least 8 characters.">
+      <form onSubmit={handleReset} className="space-y-4">
+        <div>
+          <label className="k-label" htmlFor="new-password">New password</label>
+          <input
+            id="new-password"
+            type="password"
+            autoComplete="new-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="New password"
+            className="k-input"
+            required
+          />
+        </div>
+        {message && <div className={isError ? "k-alert-error" : "k-alert-success"}>{message}</div>}
+        <button type="submit" disabled={submitting} className="k-btn-primary k-btn-block k-btn-lg">
+          {submitting ? "Updating…" : "Update password"}
+        </button>
+      </form>
+    </AuthCard>
   );
 }

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/utils/supabaseClient";
+import AuthCard from "@/components/AuthCard";
 
 export default function SignUpPage() {
   const router = useRouter();
@@ -136,119 +137,118 @@ export default function SignUpPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-white px-4">
-      <div className="bg-white shadow rounded-lg p-8 max-w-md w-full">
-        <h1 className="text-3xl font-bold text-center text-gray-900 mb-6">Key Owner Sign Up</h1>
-
-        <form onSubmit={handleSignUp} className="space-y-4">
+    <AuthCard
+      title="Create your account"
+      subtitle="It takes less than a minute."
+      footer={
+        <>
+          Already have an account?{" "}
+          <button type="button" className="k-link" onClick={() => router.push("/login")}>
+            Sign in
+          </button>
+        </>
+      }
+    >
+      <form onSubmit={handleSignUp} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700">Email</label>
+            <label className="k-label" htmlFor="fullName">Full name</label>
             <input
-              type="email"
-              value={email}
-              onChange={(e) => {
-                setEmail(e.target.value);
-                setError("");
-                setAlreadyRegistered(false);
-              }}
-              placeholder="Enter user email"
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-black"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => {
-                setPassword(e.target.value);
-                setError("");
-                setAlreadyRegistered(false);
-              }}
-              placeholder="Enter password"
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-black"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Full Name</label>
-            <input
+              id="fullName"
               type="text"
+              autoComplete="name"
               value={fullName}
               onChange={(e) => {
                 setFullName(e.target.value);
                 setError("");
                 setAlreadyRegistered(false);
               }}
-              placeholder="Enter full name"
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-black"
+              placeholder="Your name"
+              className="k-input"
               required
             />
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-gray-700">Phone Number</label>
+            <label className="k-label" htmlFor="email">Email</label>
             <input
+              id="email"
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setError("");
+                setAlreadyRegistered(false);
+              }}
+              placeholder="name@example.com"
+              className="k-input"
+              required
+            />
+          </div>
+          <div>
+            <label className="k-label" htmlFor="password">Password</label>
+            <input
+              id="password"
+              type="password"
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setError("");
+                setAlreadyRegistered(false);
+              }}
+              placeholder="Choose a password"
+              className="k-input"
+              required
+            />
+          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="k-label" htmlFor="phone">Phone (optional)</label>
+            <input
+              id="phone"
               type="tel"
+              autoComplete="tel"
               value={phoneNumber}
-              onChange={(e) => setPhoneNumber(e.target.value)}
-              placeholder="Enter phone number"
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-black"
+              onChange={(e) => {
+                setPhoneNumber(e.target.value);
+              }}
+              placeholder="+20 …"
+              className="k-input"
             />
           </div>
-
           <div>
-            <label className="block text-sm font-medium text-gray-700">Country</label>
+            <label className="k-label" htmlFor="country">Country (optional)</label>
             <input
+              id="country"
               type="text"
+              autoComplete="country-name"
               value={country}
-              onChange={(e) => setCountry(e.target.value)}
-              placeholder="Enter country"
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-black"
+              onChange={(e) => {
+                setCountry(e.target.value);
+              }}
+              placeholder="Egypt"
+              className="k-input"
             />
           </div>
+        </div>
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition disabled:opacity-60"
-          >
-            {submitting ? "Signing up..." : "Sign Up"}
-          </button>
+        {error && (
+          <div className="k-alert-error">
+            {error}
+            {alreadyRegistered && (
+              <div className="mt-2">
+                <button type="button" className="k-link" onClick={() => router.push("/login")}>
+                  Go to sign in ›
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
-          {error && (
-            <div className="text-red-600 text-center font-medium">
-              {error}
-
-              {alreadyRegistered && (
-                <div className="mt-3">
-                  <button
-                    type="button"
-                    onClick={() => router.push("/login")}
-                    className="px-4 py-2 bg-gray-900 text-white rounded-md hover:opacity-90 transition"
-                  >
-                    Go to Login
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-        </form>
-
-        <p className="mt-4 text-sm text-gray-500 text-center">
-          Already have an account?{" "}
-          <button
-            type="button"
-            onClick={() => router.push("/login")}
-            className="text-blue-600 hover:underline bg-transparent border-0 p-0"
-          >
-            Login
-          </button>
-        </p>
-      </div>
-    </div>
+        <button type="submit" disabled={submitting} className="k-btn-primary k-btn-block k-btn-lg !mt-6">
+          {submitting ? "Creating account…" : "Create account"}
+        </button>
+      </form>
+    </AuthCard>
   );
 }

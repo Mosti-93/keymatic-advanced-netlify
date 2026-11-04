@@ -1,8 +1,10 @@
 'use client'
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/utils/supabaseClient";
 import { authHeaders } from "@/utils/requireRole";
+import DataTable, { RowAction } from "@/components/DataTable";
+import PageHeader, { Notice, FormPanel } from "@/components/PageHeader";
 
 export default function CreateMachinePage() {
   const router = useRouter();
@@ -16,6 +18,7 @@ export default function CreateMachinePage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [machines, setMachines] = useState([]);
+  const [loaded, setLoaded] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editingMachineId, setEditingMachineId] = useState(null);
 
@@ -23,10 +26,6 @@ export default function CreateMachinePage() {
   // Example: { A01: { text: 'Refresh started', color: 'green' }, ABC: { text:'Error', color:'red' } }
   const [refreshStatus, setRefreshStatus] = useState({});
 
-  // Table controls (Owner Panel–style)
-  const [tableFilter, setTableFilter] = useState('');
-  const [sortField, setSortField] = useState('machine_id'); // machine_id | machine_name | location | machine_address | capacity
-  const [sortDir, setSortDir] = useState('asc');
 
   // Track number of whitelist registrations per machine (keys already registered)
   // keyed by machine_id, e.g. { A12: 2 }
@@ -43,6 +42,7 @@ export default function CreateMachinePage() {
     } else {
       setMachines(data || []);
     }
+    setLoaded(true);
   };
 
   // After we have the list of machines, fetch how many UIDs are registered
@@ -239,297 +239,123 @@ export default function CreateMachinePage() {
     }
   };
 
-  // ---------- Table search/sort (Owner Panel style) ----------
-  const sorters = {
-    machine_id: (m) => (m.machine_id || '').toLowerCase(),
-    machine_name: (m) => ((m["Machine name"] || '').toLowerCase()),
-    location: (m) => (m.location || '').toLowerCase(),
-    machine_address: (m) => (m.machine_address || '').toLowerCase(),
-    capacity: (m) => Number.isFinite(m.capacity) ? m.capacity : -Infinity,
+  const resetForm = () => {
+    setForm({ machineId: '', machineName: '', location: '', machineAddress: '', capacity: '' });
+    setEditMode(false);
+    setEditingMachineId(null);
+    setMessage('');
   };
 
-  const visibleMachines = useMemo(() => {
-    let arr = [...machines];
-
-    // search
-    if (tableFilter.trim()) {
-      const f = tableFilter.trim().toLowerCase();
-      arr = arr.filter(m =>
-        (m.machine_id || '').toLowerCase().includes(f) ||
-        ((m["Machine name"] || '').toLowerCase().includes(f)) ||
-        (m.location || '').toLowerCase().includes(f) ||
-        (m.machine_address || '').toLowerCase().includes(f) ||
-        String(m.capacity ?? '').toLowerCase().includes(f)
-      );
-    }
-
-    // sort
-    if (sortField && sorters[sortField]) {
-      arr.sort((a, b) => {
-        const va = sorters[sortField](a);
-        const vb = sorters[sortField](b);
-        if (va < vb) return sortDir === 'asc' ? -1 : 1;
-        if (va > vb) return sortDir === 'asc' ? 1 : -1;
-        return 0;
-      });
-    }
-
-    return arr;
-  }, [machines, tableFilter, sortField, sortDir]);
-
-  const handleSort = (field) => {
-    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortField(field); setSortDir('asc'); }
+  const isUrl = (v) => /^https?:\/\//i.test(String(v || '').trim());
+  const usage = (m) => {
+    const reg = regCounts[(m.machine_id || '').trim()];
+    const cap = Number(m.capacity);
+    return { reg: reg ?? null, cap: Number.isFinite(cap) && cap > 0 ? cap : null };
   };
 
-  const SortLabel = ({ field, children }) => (
-    <span className="cursor-pointer select-none" onClick={() => handleSort(field)}>
-      {children} {sortField === field && (sortDir === 'asc' ? '▲' : '▼')}
-    </span>
+  const field = (label, name, props = {}, hint) => (
+    <div>
+      <label className="k-label" htmlFor={`m-${name}`}>{label}</label>
+      <input id={`m-${name}`} name={name} value={form[name]} onChange={handleChange} className="k-input" {...props} />
+      {hint && <p className="mt-1.5 text-[12px] k-faint">{hint}</p>}
+    </div>
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-800">
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-          <h1 className="text-3xl font-bold text-gray-900">Create Machine</h1>
-        </div>
-      </header>
+    <div className="k-page">
+      <PageHeader eyebrow="Machines" title="Your machines" subtitle="Where keys live, and how full each one is." />
 
-      <main className="max-w-7xl mx-auto py-10 sm:px-6 lg:px-8 space-y-8">
-        {/* Form */}
-        <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">{editMode ? 'Edit Machine' : 'Add New Machine'}</h2>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Machine ID + Machine Name side-by-side */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Machine ID</label>
-                <input
-                  type="text"
-                  name="machineId"
-                  value={form.machineId}
-                  onChange={handleChange}
-                  placeholder="Enter machine ID"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring focus:ring-green-200 focus:ring-opacity-50"
-                  required
-                />
-                <p className="mt-1 text-xs text-gray-500">Must be exactly 3 characters (A-D, 0-9 only).</p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Machine Name</label>
-                <input
-                  type="text"
-                  name="machineName"
-                  value={form.machineName}
-                  onChange={handleChange}
-                  placeholder="Enter machine name"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring focus:ring-green-200 focus:ring-opacity-50"
-                  required
-                />
-              </div>
-            </div>
-
-            {/* Location + Address side by side */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Location</label>
-                <input
-                  type="text"
-                  name="location"
-                  value={form.location}
-                  onChange={handleChange}
-                  placeholder="Paste location Link Here !"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring focus:ring-green-200 focus:ring-opacity-50"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Machine Address</label>
-                <input
-                  type="text"
-                  name="machineAddress"
-                  value={form.machineAddress}
-                  onChange={handleChange}
-                  placeholder="Exact address Street, building, floor…"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring focus:ring-green-200 focus:ring-opacity-50"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Capacity</label>
-              <input
-                type="number"
-                name="capacity"
-                value={form.capacity}
-                onChange={handleChange}
-                placeholder="Enter capacity"
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-green-500 focus:ring focus:ring-green-200 focus:ring-opacity-50"
-                required
-              />
-            </div>
-
-            <div className="flex space-x-2">
-              <button
-                type="submit"
-                disabled={loading}
-                className="inline-flex items-center px-4 py-2 bg-green-600 border border-transparent rounded-md font-semibold text-white hover:bg-green-700 transition"
-              >
-                {loading ? 'Saving...' : editMode ? 'Update Machine' : 'Save Machine'}
+      <Notice>{message}</Notice>
+      <div className="space-y-6">
+        <FormPanel title={editMode ? 'Edit machine' : 'Add machine'} addLabel="Add machine" forceOpen={editMode}>
+          <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 items-start">
+            {field('Machine ID', 'machineId', { placeholder: 'e.g. A12', required: true, maxLength: 3 }, '3 characters: A–D and 0–9.')}
+            {field('Name', 'machineName', { placeholder: 'e.g. Alpha', required: true })}
+            {field('Location (map link)', 'location', { placeholder: 'Paste a Google Maps link', required: true })}
+            {field('Address', 'machineAddress', { placeholder: 'Street, building, floor…' })}
+            {field('Capacity', 'capacity', { type: 'number', min: 1, placeholder: 'Number of slots', required: true })}
+            <div className="flex gap-2 pt-2 md:col-span-2 lg:col-span-3 md:justify-end">
+              <button type="submit" disabled={loading} className="k-btn-primary flex-1 md:flex-none md:min-w-40">
+                {loading ? 'Saving…' : editMode ? 'Save changes' : 'Add machine'}
               </button>
-              {editMode && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setForm({ machineId: '', machineName: '', location: '', machineAddress: '', capacity: '' });
-                    setEditMode(false);
-                    setEditingMachineId(null);
-                    setMessage('');
-                  }}
-                  className="px-4 py-2 bg-gray-400 text-white rounded-md hover:bg-gray-500"
-                >
-                  Cancel
-                </button>
-              )}
+              {editMode && <button type="button" onClick={resetForm} className="k-btn-secondary">Cancel</button>}
             </div>
           </form>
-          {message && <p className="mt-4 text-center text-sm">{message}</p>}
-        </div>
+          
+        </FormPanel>
 
-        {/* Machines table (Owner Panel–style) */}
-        <div className="bg-white shadow rounded-lg p-6">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-            <h2 className="text-xl font-semibold">Existing Machines</h2>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <input
-                type="text"
-                value={tableFilter}
-                onChange={e => setTableFilter(e.target.value)}
-                placeholder="Search by ID, name, location, address, capacity…"
-                className="p-2 border rounded-md w-72"
-              />
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-full border border-gray-300 rounded-lg">
-              <thead className="bg-gray-100">
-                <tr>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
-                    <SortLabel field="machine_id">Machine ID</SortLabel>
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
-                    <SortLabel field="machine_name">Machine Name</SortLabel>
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
-                    <SortLabel field="location">Location</SortLabel>
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
-                    <SortLabel field="machine_address">Machine Address</SortLabel>
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
-                    <SortLabel field="capacity">Capacity</SortLabel>
-                  </th>
-                  {/* Status column */}
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
-                    Status
-                  </th>
-                  <th className="px-4 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-right">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleMachines.map((m) => (
-                  <tr key={m.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 border border-gray-300">{m.machine_id}</td>
-                    <td className="px-4 py-3 border border-gray-300">{m["Machine name"]}</td>
-                    <td className="px-4 py-3 border border-gray-300">{m.location}</td>
-                    <td className="px-4 py-3 border border-gray-300">{m.machine_address || ''}</td>
-
-                    {/* Capacity cell: show registered whitelist keys over total capacity */}
-               <td className="px-4 py-3 border border-gray-300">
-  {(() => {
-    // Be careful with "A12\n" from DB → trim it
-    const mid = (m.machine_id || '').trim();
-    const reg = regCounts[mid];
-    const cap = m.capacity;
-
-    // If we know how many UIDs are registered AND we know capacity,
-    // show "registered/capacity", for example "2/18".
-    if (
-      reg !== undefined &&
-      reg !== null &&
-      cap !== undefined &&
-      cap !== null &&
-      cap !== ''
-    ) {
-      return `${reg}/${cap}`;
-    }
-
-    // Fallback: just show capacity if we don't have reg count yet.
-    if (cap !== undefined && cap !== null) {
-      return cap;
-    }
-
-    return '';
-  })()}
-</td>
-
-
-                    {/* Status cell */}
-                    <td className="px-4 py-3 border border-gray-300">
-                      {(() => {
-                        const s = refreshStatus[m.machine_id] || { text: 'Idle', color: 'gray' };
-                        const colorClass =
-                          s.color === 'green'
-                            ? 'text-green-600 font-medium'
-                            : s.color === 'red'
-                            ? 'text-red-600 font-medium'
-                            : 'text-gray-500';
-                        return <span className={colorClass}>{s.text}</span>;
-                      })()}
-                    </td>
-
-                    <td className="px-4 py-3 border border-gray-300 text-right">
-                      <div className="inline-flex gap-2">
-                        {/* Refresh button */}
-                        <button
-                          onClick={() => handleRefresh(m.machine_id)}
-                          className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700"
-                        >
-                          Refresh
-                        </button>
-                        <button
-                          onClick={() => handleEdit(m)}
-                          className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDelete(m.id)}
-                          className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {visibleMachines.length === 0 && (
-                  <tr>
-                    {/* colSpan is 7 because we have Status column now */}
-                    <td className="px-6 py-4 text-sm text-gray-500" colSpan={7}>No machines found.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </main>
+        <DataTable
+          title="All machines"
+          rows={machines}
+          loading={!loaded}
+          exportName="machines"
+          searchPlaceholder="Search ID, name, address"
+          defaultSort={{ key: "machine_id", dir: "asc" }}
+          emptyText="No machines yet. Add your first one."
+          columns={[
+            { key: "machine_id", header: "ID", mobile: "title", value: (m) => (m.machine_id || '').trim(), cell: (m) => <span className="font-medium">{(m.machine_id || '').trim()}</span> },
+            { key: "name", header: "Name", mobile: "subtitle", value: (m) => m["Machine name"] },
+            {
+              key: "place",
+              header: "Address",
+              value: (m) => m.machine_address || (isUrl(m.location) ? "" : m.location),
+              cell: (m) => (
+                <div className="max-w-[260px]">
+                  {m.machine_address && <div>{m.machine_address}</div>}
+                  {isUrl(m.location) ? (
+                    <a href={m.location} target="_blank" rel="noopener noreferrer" className="k-link text-[13px]">Open map ↗</a>
+                  ) : (
+                    m.location && <div className="text-[13px] k-muted">{m.location}</div>
+                  )}
+                </div>
+              ),
+            },
+            {
+              key: "capacity",
+              header: "Keys / capacity",
+              value: (m) => { const u = usage(m); return u.cap ? (u.reg ?? 0) / u.cap : -1; },
+              cell: (m) => {
+                const { reg, cap } = usage(m);
+                if (!cap) return m.capacity ?? null;
+                const pct = Math.min(100, Math.round(((reg ?? 0) / cap) * 100));
+                return (
+                  <div className="w-28">
+                    <div className="text-[13px]">{reg ?? "…"} <span className="k-faint">/ {cap}</span></div>
+                    <div className="mt-1 h-1.5 rounded-full bg-black/[0.06] overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: pct >= 90 ? "#d70015" : "#0071e3" }} />
+                    </div>
+                  </div>
+                );
+              },
+              export: true,
+            },
+            {
+              key: "status",
+              header: "Refresh",
+              sortable: false,
+              search: false,
+              export: false,
+              value: (m) => refreshStatus[m.machine_id]?.text || "",
+              cell: (m) => {
+                const st = refreshStatus[m.machine_id];
+                if (!st) return <span className="k-faint">—</span>;
+                const cls = st.color === 'green' ? 'k-badge-green' : st.color === 'red' ? 'k-badge-red' : 'k-badge-gray';
+                return <span className={cls} title={st.text}>{st.text.length > 28 ? st.text.slice(0, 28) + '…' : st.text}</span>;
+              },
+            },
+          ]}
+          rowClassName={(m) => (m.id === editingMachineId ? "!bg-[#e8f2fd]" : "")}
+          rowActions={(m) => (
+            <>
+              <RowAction tone="primary" onClick={() => handleRefresh(m.machine_id)} disabled={refreshStatus[m.machine_id]?.text === 'Refreshing…'}>
+                Refresh
+              </RowAction>
+              <RowAction onClick={() => handleEdit(m)}>Edit</RowAction>
+              <RowAction tone="danger" onClick={() => handleDelete(m.id)}>Delete</RowAction>
+            </>
+          )}
+        />
+      </div>
     </div>
   );
 }

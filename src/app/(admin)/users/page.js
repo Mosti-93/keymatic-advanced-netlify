@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/utils/supabaseClient";
+import DataTable, { RowAction, toDate, fmtDate } from "@/components/DataTable";
+import PageHeader, { Notice } from "@/components/PageHeader";
 
 const ROLES = ["admin", "owner", "client", "reviewer", "editor"];
 
@@ -127,103 +129,53 @@ export default function UsersRolesControlPage() {
     }
   }
 
+  const ROLE_BADGE = { admin: "k-badge-blue", owner: "k-badge-green", client: "k-badge-gray", reviewer: "k-badge-orange", editor: "k-badge-orange" };
+  const roleFilter = (r) => ({ key: r, label: r[0].toUpperCase() + r.slice(1) + "s", test: (u) => String(u.role || "").toLowerCase() === r });
+
   return (
-    <div className="min-h-screen flex flex-col items-center justify-start bg-white py-10 text-black">
-      <div className="bg-white shadow rounded-lg p-8 w-full max-w-6xl text-black">
-        <h1 className="text-3xl font-bold text-center mb-8 text-black">
-          Users Roles Control
-        </h1>
-
-        {message && (
-          <div className="mb-4 text-center text-black">
-            {message}
-          </div>
-        )}
-
-        <div className="overflow-x-auto">
-          <table className="min-w-full border border-gray-300 rounded-lg text-black">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="px-6 py-4 border border-gray-300 text-lg text-black">Name</th>
-                <th className="px-6 py-4 border border-gray-300 text-lg text-black">Email</th>
-                <th className="px-6 py-4 border border-gray-300 text-lg text-black">Role</th>
-                <th className="px-6 py-4 border border-gray-300 text-lg text-black">Last Login</th>
-                <th className="px-6 py-4 border border-gray-300 text-lg text-black">Edit</th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {users.map((u) => {
-                const isEditing = editId === u.id;
-                const isSelf = myUserId && u.id === myUserId;
-
-                return (
-                  <tr key={u.id} className="bg-white">
-                    <td className="px-6 py-4 border border-gray-300">{u.name || ""}</td>
-                    <td className="px-6 py-4 border border-gray-300">{u.email || ""}</td>
-
-                    <td className="px-6 py-4 border border-gray-300">
-                      {isEditing ? (
-                        <select
-                          className="border rounded px-2 py-1"
-                          value={newRole}
-                          onChange={(e) => setNewRole(e.target.value)}
-                          disabled={loading}
-                        >
-                          {ROLES.map((r) => (
-                            <option key={r} value={r}>{r}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        u.role || ""
-                      )}
-                    </td>
-
-                    <td className="px-6 py-4 border border-gray-300">
-                      {u.last_login || ""}
-                    </td>
-
-                    <td className="px-6 py-4 border border-gray-300">
-                      {isEditing ? (
-                        <div className="flex gap-2">
-                          <button
-                            className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-60"
-                            disabled={loading}
-                            onClick={() => saveRole(u)}
-                          >
-                            Save
-                          </button>
-
-                          <button
-                            className="bg-gray-300 text-black px-4 py-2 rounded disabled:opacity-60"
-                            disabled={loading}
-                            onClick={cancelEdit}
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          className="bg-black text-white px-4 py-2 rounded disabled:opacity-60"
-                          disabled={loading || isSelf}
-                          title={isSelf ? "For safety, you cannot edit your own role here." : ""}
-                          onClick={() => startEdit(u)}
-                        >
-                          Edit
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-
-          {loading && (
-            <div className="mt-4 text-center">Loading...</div>
-          )}
-        </div>
-      </div>
+    <div className="k-page">
+      <PageHeader eyebrow="Users" title="People & roles" subtitle="Control who can access what." />
+      <Notice>{message}</Notice>
+      <DataTable
+        title="All users"
+        rows={users}
+        loading={loading && users.length === 0}
+        exportName="users"
+        searchPlaceholder="Search name or email"
+        defaultSort={{ key: "name", dir: "asc" }}
+        filters={[{ key: "all", label: "All", test: () => true }, roleFilter("admin"), roleFilter("owner"), roleFilter("client")]}
+        columns={[
+          { key: "name", header: "Name", mobile: "title", cell: (u) => <span className="font-medium">{u.name}</span> },
+          { key: "email", header: "Email", mobile: "subtitle" },
+          {
+            key: "role",
+            header: "Role",
+            value: (u) => u.role || "",
+            cell: (u) =>
+              editId === u.id ? (
+                <select className="k-input !py-1.5 !px-3 !w-auto" value={newRole} onChange={(e) => setNewRole(e.target.value)} disabled={loading}>
+                  {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              ) : u.role ? (
+                <span className={ROLE_BADGE[String(u.role).toLowerCase()] || "k-badge-gray"}>{u.role}</span>
+              ) : null,
+          },
+          { key: "last_login", header: "Last sign in", value: (u) => toDate(u.last_login), cell: (u) => (u.last_login ? fmtDate(u.last_login) : "Never") },
+        ]}
+        rowActions={(u) => {
+          const isSelf = myUserId && u.id === myUserId;
+          return editId === u.id ? (
+            <>
+              <RowAction tone="primary" disabled={loading} onClick={() => saveRole(u)}>Save</RowAction>
+              <RowAction disabled={loading} onClick={cancelEdit}>Cancel</RowAction>
+            </>
+          ) : (
+            <RowAction disabled={loading || isSelf} title={isSelf ? "For safety, you can’t change your own role." : "Change role"} onClick={() => startEdit(u)}>
+              Change role
+            </RowAction>
+          );
+        }}
+      />
     </div>
   );
 }

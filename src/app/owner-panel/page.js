@@ -3,6 +3,11 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/utils/supabaseClient";
 import { authHeaders } from "@/utils/requireRole";
+import { CheckingAccess } from "@/utils/useRequireRole";
+import AppShell from "@/components/AppShell";
+import DataTable, { RowAction, toDate, fmtDate } from "@/components/DataTable";
+import PageHeader, { Notice, FormPanel } from "@/components/PageHeader";
+import { guestStatus, GUEST_FILTERS, STATUS_BADGE } from "@/utils/guestStatus";
 
 export default function OwnerPanelPage() {
   const router = useRouter();
@@ -26,16 +31,13 @@ const platforms = [
 ];
 
   const [clients, setClients] = useState([]);
+  const [clientsLoaded, setClientsLoaded] = useState(false);
   const [keys, setKeys] = useState([]);
   const [machines, setMachines] = useState([]);
   const [slotPresence, setSlotPresence] = useState([]); // <-- Added!
-  const [filter, setFilter] = useState('current');
   const [message, setMessage] = useState('');
   const [editMode, setEditMode] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [tableFilter, setTableFilter] = useState('');
-  const [sortField, setSortField] = useState('check_in');
-  const [sortDir, setSortDir] = useState('asc');
 
   // Fetch slot_presence table
   const fetchSlotPresence = async () => {
@@ -148,6 +150,7 @@ async function handleStartPickup(client) {
   const fetchClients = async () => {
     const { data } = await supabase.from('clients').select('*').eq('owner_id', ownerId);
     setClients(data || []);
+    setClientsLoaded(true);
   };
 
   const fetchKeys = async () => {
@@ -273,58 +276,6 @@ async function handleStartPickup(client) {
     return key ? `${key.room_number} (UID: ${key.UID || key.uuid})` : '';
   };
 
-  const sorters = {
-  check_in: client => client.check_in || '',
-  check_out: client => client.check_out || '',
-  full_name: client => ((client.first_name || '') + ' ' + (client.last_name || '')).toLowerCase(),
-  key_info: client => getKeyInfo(client).toLowerCase(),
-  platform: client => (client.platform || '').toLowerCase(),
-  email: client => (client.email || '').toLowerCase(),
-  phone: client => (client.phone || '').toLowerCase()
-};
-
-
-  const filterClients = () => {
-    const today = new Date().toISOString().split('T')[0];
-    let filtered = clients.filter(client => {
-      const ci = (client.check_in || '').slice(0, 10);
-      const co = (client.check_out || '').slice(0, 10);
-      if (filter === 'current') return ci <= today && co >= today;
-      if (filter === 'coming') return ci > today;
-      if (filter === 'past') return co < today;
-      return true;
-    });
-
-    if (tableFilter.trim()) {
-      const f = tableFilter.trim().toLowerCase();
-      filtered = filtered.filter(client =>
-  (client.first_name || '').toLowerCase().includes(f) ||
-  (client.last_name || '').toLowerCase().includes(f) ||
-  (client.email || '').toLowerCase().includes(f) ||
-  (client.phone || '').toLowerCase().includes(f) ||
-  (client.check_in || '').toLowerCase().includes(f) ||
-  (client.check_out || '').toLowerCase().includes(f) ||
-  getKeyInfo(client).toLowerCase().includes(f) ||
-  (client.platform || '').toLowerCase().includes(f)
-);
-
-    }
-    if (sortField && sorters[sortField]) {
-      filtered.sort((a, b) => {
-        let va = sorters[sortField](a);
-        let vb = sorters[sortField](b);
-        if (va < vb) return sortDir === 'asc' ? -1 : 1;
-        if (va > vb) return sortDir === 'asc' ? 1 : -1;
-        return 0;
-      });
-    }
-    return filtered;
-  };
-
-  const handleSort = (field) => {
-    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-    else { setSortField(field); setSortDir('asc'); }
-  };
 
   useEffect(() => {
     const fetchOwner = async () => {
@@ -364,284 +315,152 @@ async function handleStartPickup(client) {
     }
   }, []);
 
-  if (!ownerId) return <div className="p-10 text-center text-gray-500">Loading owner data...</div>;
+  if (!ownerId) return <CheckingAccess />;
 
-  // --- JSX STARTS HERE ---
-  return (
-    <div className="min-h-screen bg-gray-50 text-gray-800">
-      <header className="bg-white shadow">
-        <div className="max-w-7xl mx-auto py-6 px-4">
-          <h1 className="text-3xl font-bold">Owner Panel</h1>
-        </div>
-      </header>
-      <main className="max-w-7xl mx-auto py-10 px-4 space-y-8">
-        <div className="bg-white shadow rounded-lg p-6">
-          <h2 className="text-xl font-semibold mb-4">{editMode ? 'Edit Client' : 'Add New Client'}</h2>
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">First Name</label>
-              <input
-                type="text"
-                name="firstName"
-                value={form.firstName}
-                onChange={handleChange}
-                required
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Last Name</label>
-              <input
-                type="text"
-                name="lastName"
-                value={form.lastName}
-                onChange={handleChange}
-                required
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Email</label>
-              <input
-                type="email"
-                name="email"
-                value={form.email}
-                onChange={handleChange}
-                required
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Phone No</label>
-              <input
-                type="text"
-                name="phone"
-                value={form.phone}
-                onChange={handleChange}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Room No / Key</label>
-              <select
-                name="keyId"
-                value={form.keyId}
-                onChange={handleChange}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-                required
-              >
-                <option value="">Select key for owner</option>
-                {keys.map((k) => (
-                  <option key={k.uuid} value={k.uuid}>
-                    {k.room_number} (UID: {k.UID || k.uuid})
-                  </option>
-                ))}
-              </select>
-            </div>
-<div>
-  <label className="block text-sm font-medium text-gray-700">Platform</label>
-  <input
-    list="platform-options"
-    name="platform"
-    value={form.platform}
-    onChange={handleChange}
-    placeholder="Select or type platform"
-    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-    required
-  />
-  <datalist id="platform-options">
-    {platforms.map((p, idx) => (
-      <option key={idx} value={p} />
-    ))}
-    <option value="Other" />
-  </datalist>
-</div>
-
-
-            <div className="flex gap-2 col-span-1 md:col-span-2">
-              <div className="w-1/2">
-                <label className="block text-sm font-medium text-gray-700">Check-In Date & Time</label>
-                <input
-                  type="datetime-local"
-                  name="checkIn"
-                  value={toDateTimeLocal(form.checkIn)}
-                  onChange={handleChange}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-                />
-              </div>
-              <div className="w-1/2">
-                <label className="block text-sm font-medium text-gray-700">Check-Out Date</label>
-                <input
-                  type="date"
-                  name="checkOut"
-                  value={form.checkOut ? form.checkOut.slice(0, 10) : ""}
-                  onChange={handleChange}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
-                />
-              </div>
-            </div>
-            <div className="md:col-span-2 flex gap-3">
-              <button
-                type="submit"
-                className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition"
-              >
-                {editMode ? 'Update Client' : 'Save Client'}
-              </button>
-              {editMode && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setForm({ firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: '', platform: '' });
-
-                    setEditMode(false);
-                    setEditingId(null);
-                    setMessage('');
-                  }}
-                  className="w-full px-4 py-2 bg-gray-400 text-white rounded-md hover:bg-gray-500 transition"
-                >
-                  Cancel
-                </button>
-              )}
-            </div>
-            {message && <p className="mt-4 text-center text-sm col-span-2">{message}</p>}
-          </form>
-        </div>
-        {/* Clients Table */}
-        <div className="bg-white shadow rounded-lg p-6">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold">📋 Existing Clients</h2>
-            <div className="space-x-2">
-              {["current", "coming", "past"].map((key) => (
-                <button
-                  key={key}
-                  onClick={() => setFilter(key)}
-                  className={`px-3 py-1 rounded ${filter === key ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}
-                >
-                  {key[0].toUpperCase() + key.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="my-2">
-            <input
-              type="text"
-              value={tableFilter}
-              onChange={e => setTableFilter(e.target.value)}
-              placeholder="Search by name, room, email, UID, etc"
-              className="p-2 border rounded-md w-64"
-            />
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full border border-gray-300 rounded-lg">
-              <thead className="bg-gray-100">
-                <tr>
-                  <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left">
-                    Start Pickup
-                  </th>
-                  <th
-                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
-                    onClick={() => handleSort('full_name')}
-                  >
-                    FULL NAME {sortField === 'full_name' && (sortDir === 'asc' ? '▲' : '▼')}
-                  </th>
-
-
-                  <th
-                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
-                    onClick={() => handleSort('key_info')}
-                  >
-                    ROOM / UID {sortField === 'key_info' && (sortDir === 'asc' ? '▲' : '▼')}
-                  </th>
-
-                  <th
-  className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
-  onClick={() => handleSort('platform')}
->
-  PLATFORM {sortField === 'platform' && (sortDir === 'asc' ? '▲' : '▼')}
-</th>
-
-                  <th
-                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left w-48 cursor-pointer"
-                    onClick={() => handleSort('check_in')}
-                  >
-                    CHECK-IN {sortField === 'check_in' && (sortDir === 'asc' ? '▲' : '▼')}
-                  </th>
-                  <th
-                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left w-48 cursor-pointer"
-                    onClick={() => handleSort('check_out')}
-                  >
-                    CHECK-OUT {sortField === 'check_out' && (sortDir === 'asc' ? '▲' : '▼')}
-                  </th>
-                  <th
-                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
-                    onClick={() => handleSort('email')}
-                  >
-                    EMAIL {sortField === 'email' && (sortDir === 'asc' ? '▲' : '▼')}
-                  </th>
-                  <th
-                    className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-left cursor-pointer"
-                    onClick={() => handleSort('phone')}
-                  >
-                    PHONE {sortField === 'phone' && (sortDir === 'asc' ? '▲' : '▼')}
-                  </th>
-                  <th className="px-6 py-3 text-xs font-medium text-gray-500 uppercase border border-gray-300 text-right">
-                    ACTIONS
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {filterClients().map((client, index) => (
-                  <tr key={index} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 border border-gray-300 text-left">
-                      {(['current', 'coming'].includes(filter)) && (
-                        <button
-                          onClick={() => handleStartPickup(client)}
-                          className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md text-white bg-teal-600 hover:bg-teal-700"
-                        >
-                          Start Pickup
-                        </button>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 border border-gray-300">
-                      {(client.first_name || '') + ' ' + (client.last_name || '')}
-                    </td>
-                    <td className="px-6 py-4 border border-gray-300">{getKeyInfo(client)}</td>
-                    <td className="px-6 py-4 border border-gray-300">{client.platform || '-'}</td>
-
-                    <td className="px-6 py-4 border border-gray-300 w-48">{displayDateTime(client.check_in)}</td>
-                    <td className="px-6 py-4 border border-gray-300 w-48">{displayDateTime(client.check_out)}</td>
-                    <td className="px-6 py-4 border border-gray-300">{client.email}</td>
-                    <td className="px-6 py-4 border border-gray-300">{client.phone}</td>
-                    <td className="px-6 py-4 border border-gray-300">
-                      <div className="flex flex-row gap-2 justify-end">
-                        <button
-                          onClick={() => handleEdit(client)}
-                          className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDelete(client.id)}
-                          className="inline-flex items-center px-3 py-1 text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {filterClients().length === 0 && (
-                  <tr>
-                    <td colSpan={9} className="text-center text-gray-400 py-4">
-                      No clients found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </main>
+  const resetForm = () => {
+    setForm({ firstName: '', lastName: '', email: '', phone: '', keyId: '', checkIn: '', checkOut: '', platform: '' });
+    setEditMode(false);
+    setEditingId(null);
+    setMessage('');
+  };
+  const keyFor = (c) => keys.find(k => k.uuid === c.key_id);
+  const inMachine = (k) => !!k?.UID && slotPresence.some(sp => sp.UID === k.UID);
+  const counts = {
+    now: clients.filter(c => guestStatus(c) === 'current').length,
+    upcoming: clients.filter(c => guestStatus(c) === 'upcoming').length,
+    keys: keys.length,
+    ready: keys.filter(inMachine).length,
+  };
+  const input = (label, name, props = {}) => (
+    <div>
+      <label className="k-label" htmlFor={`o-${name}`}>{label}</label>
+      <input id={`o-${name}`} name={name} value={form[name]} onChange={handleChange} className="k-input" {...props} />
     </div>
+  );
+  const firstName = (profile?.name || '').split(' ')[0];
+
+  return (
+    <AppShell nav={[]} homeHref="/owner-panel">
+      <div className="k-page">
+        <PageHeader eyebrow="Owner" title={firstName ? `Hi, ${firstName}.` : 'Your guests'} subtitle="Add guests and send their pickup links." />
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8 k-fade-in-2">
+          {[
+            ['Staying now', counts.now],
+            ['Upcoming', counts.upcoming],
+            ['Your keys', counts.keys],
+            ['Keys in machine', counts.ready],
+          ].map(([label, v]) => (
+            <div key={label} className="k-card !p-6">
+              <div className="text-[13px] k-muted">{label}</div>
+              <div className="mt-1 text-4xl font-semibold tracking-tight" style={{ letterSpacing: '-0.03em' }}>{v}</div>
+            </div>
+          ))}
+        </div>
+
+        {message && <Notice>{message}</Notice>}
+
+        <div className="space-y-6">
+          <FormPanel title={editMode ? 'Edit guest' : 'Add guest'} addLabel="Add guest" forceOpen={editMode}>
+            <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 items-start">
+              <div className="grid grid-cols-2 gap-3">
+                {input('First name', 'firstName', { required: true })}
+                {input('Last name', 'lastName', { required: true })}
+              </div>
+              {input('Email', 'email', { type: 'email', required: true, placeholder: 'guest@example.com' })}
+              {input('Phone', 'phone', { placeholder: '+20 …' })}
+              <div>
+                <label className="k-label" htmlFor="o-key">Room / key</label>
+                <select id="o-key" name="keyId" value={form.keyId} onChange={handleChange} className="k-input" required>
+                  <option value="">Select a key</option>
+                  {keys.map((k) => (
+                    <option key={k.uuid} value={k.uuid}>Room {k.room_number} · {k.UID || k.uuid}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="k-label" htmlFor="o-platform">Platform</label>
+                <input id="o-platform" list="platform-options" name="platform" value={form.platform} onChange={handleChange} placeholder="Airbnb, Booking.com…" className="k-input" required />
+                <datalist id="platform-options">
+                  {platforms.map((p, idx) => <option key={idx} value={p} />)}
+                  <option value="Other" />
+                </datalist>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="k-label" htmlFor="o-checkIn">Check-in</label>
+                  <input id="o-checkIn" type="datetime-local" name="checkIn" value={toDateTimeLocal(form.checkIn)} onChange={handleChange} className="k-input" />
+                </div>
+                <div>
+                  <label className="k-label" htmlFor="o-checkOut">Check-out</label>
+                  <input id="o-checkOut" type="date" name="checkOut" value={form.checkOut ? form.checkOut.slice(0, 10) : ""} onChange={handleChange} className="k-input" />
+                </div>
+              </div>
+              <div className="flex gap-2 pt-2 md:col-span-2 lg:col-span-3 md:justify-end">
+                <button type="submit" className="k-btn-primary flex-1 md:flex-none md:min-w-40">{editMode ? 'Save changes' : 'Add guest'}</button>
+                {editMode && <button type="button" onClick={resetForm} className="k-btn-secondary">Cancel</button>}
+              </div>
+            </form>
+          </FormPanel>
+
+          <DataTable
+            title="Your guests"
+            rows={clients}
+            loading={!clientsLoaded}
+            exportName="my-guests"
+            searchPlaceholder="Search name, room, email, phone"
+            filters={GUEST_FILTERS}
+            defaultSort={{ key: "check_in", dir: "asc" }}
+            emptyText="No guests in this view."
+            columns={[
+              {
+                key: "name",
+                header: "Guest",
+                mobile: "title",
+                nowrap: true,
+                value: (c) => `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+                cell: (c) => <span className="font-medium">{`${c.first_name || ''} ${c.last_name || ''}`.trim()}</span>,
+              },
+              {
+                key: "room",
+                header: "Room",
+                mobile: "subtitle",
+                value: (c) => keyFor(c)?.room_number || "",
+                cell: (c) => {
+                  const k = keyFor(c);
+                  if (!k) return null;
+                  return (
+                    <>
+                      <div>Room {k.room_number}</div>
+                      <div className="text-[12px]">{inMachine(k) ? <span className="text-[#1d8a3a]">● In machine</span> : <span className="k-faint">Not in machine</span>}</div>
+                    </>
+                  );
+                },
+              },
+              { key: "status", header: "Status", value: (c) => STATUS_BADGE[guestStatus(c)][1], cell: (c) => { const [cls, label] = STATUS_BADGE[guestStatus(c)]; return <span className={cls}>{label}</span>; } },
+              { key: "check_in", header: "Check-in", nowrap: true, value: (c) => toDate(c.check_in), cell: (c) => fmtDate(c.check_in) },
+              { key: "check_out", header: "Check-out", nowrap: true, value: (c) => toDate(c.check_out), cell: (c) => fmtDate(c.check_out) },
+              { key: "platform", header: "Platform" },
+              {
+              key: "contact",
+              header: "Contact",
+              value: (c) => [c.email, c.phone].filter(Boolean).join(" · "),
+              cell: (c) => (<><div className="max-w-[200px] truncate" title={c.email}>{c.email}</div>{c.phone && <div className="text-[12px] k-faint">{c.phone}</div>}</>),
+            },
+            ]}
+            rowClassName={(c) => (c.id === editingId ? "!bg-[#e8f2fd]" : "")}
+            rowActions={(c) => (
+              <>
+                {['current', 'upcoming'].includes(guestStatus(c)) && (
+                  <RowAction tone="primary" onClick={() => handleStartPickup(c)}>Start pickup</RowAction>
+                )}
+                <RowAction onClick={() => { handleEdit(c); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Edit</RowAction>
+                <RowAction tone="danger" onClick={() => handleDelete(c.id)}>Delete</RowAction>
+              </>
+            )}
+          />
+        </div>
+      </div>
+    </AppShell>
   );
 }
