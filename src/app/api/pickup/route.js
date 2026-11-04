@@ -10,11 +10,11 @@ export async function POST(request) {
   try {
     const body = await request.json();
 
-    const response = await fetch('https://vnnqjmsshzbmngnlyvzq.supabase.co/functions/v1/send-pickup-email', {
-      method: 'POST',
+    const response = await fetch("https://vnnqjmsshzbmngnlyvzq.supabase.co/functions/v1/send-pickup-email", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SERVICE_ROLE_KEY}`,
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
       },
       body: JSON.stringify(body),
     });
@@ -23,12 +23,12 @@ export async function POST(request) {
 
     return new Response(JSON.stringify(data), {
       status: response.status,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { "Content-Type": "application/json" },
     });
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message || 'Internal Server Error' }), {
+    return new Response(JSON.stringify({ error: error.message || "Internal Server Error" }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { "Content-Type": "application/json" },
     });
   }
 }

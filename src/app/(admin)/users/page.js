@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/utils/supabaseClient";
@@ -20,7 +20,6 @@ export default function UsersRolesControlPage() {
       await fetchUsers();
       await fetchMyUserId();
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function fetchMyUserId() {
@@ -108,10 +107,7 @@ export default function UsersRolesControlPage() {
       }
 
       // 3) Sync public.users.role for UI display (optional but recommended)
-      const { error: dbErr } = await supabase
-        .from("users")
-        .update({ role: newRole })
-        .eq("id", user.id);
+      const { error: dbErr } = await supabase.from("users").update({ role: newRole }).eq("id", user.id);
 
       if (dbErr) {
         setMessage(`Auth role updated, but users table sync failed: ${dbErr.message}`);
@@ -129,8 +125,18 @@ export default function UsersRolesControlPage() {
     }
   }
 
-  const ROLE_BADGE = { admin: "k-badge-blue", owner: "k-badge-green", client: "k-badge-gray", reviewer: "k-badge-orange", editor: "k-badge-orange" };
-  const roleFilter = (r) => ({ key: r, label: r[0].toUpperCase() + r.slice(1) + "s", test: (u) => String(u.role || "").toLowerCase() === r });
+  const ROLE_BADGE = {
+    admin: "k-badge-blue",
+    owner: "k-badge-green",
+    client: "k-badge-gray",
+    reviewer: "k-badge-orange",
+    editor: "k-badge-orange",
+  };
+  const roleFilter = (r) => ({
+    key: r,
+    label: r[0].toUpperCase() + r.slice(1) + "s",
+    test: (u) => String(u.role || "").toLowerCase() === r,
+  });
 
   return (
     <div className="k-page">
@@ -143,7 +149,12 @@ export default function UsersRolesControlPage() {
         exportName="users"
         searchPlaceholder="Search name or email"
         defaultSort={{ key: "name", dir: "asc" }}
-        filters={[{ key: "all", label: "All", test: () => true }, roleFilter("admin"), roleFilter("owner"), roleFilter("client")]}
+        filters={[
+          { key: "all", label: "All", test: () => true },
+          roleFilter("admin"),
+          roleFilter("owner"),
+          roleFilter("client"),
+        ]}
         columns={[
           { key: "name", header: "Name", mobile: "title", cell: (u) => <span className="font-medium">{u.name}</span> },
           { key: "email", header: "Email", mobile: "subtitle" },
@@ -153,24 +164,46 @@ export default function UsersRolesControlPage() {
             value: (u) => u.role || "",
             cell: (u) =>
               editId === u.id ? (
-                <select className="k-input !py-1.5 !px-3 !w-auto" value={newRole} onChange={(e) => setNewRole(e.target.value)} disabled={loading}>
-                  {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                <select
+                  className="k-input !py-1.5 !px-3 !w-auto"
+                  value={newRole}
+                  onChange={(e) => setNewRole(e.target.value)}
+                  disabled={loading}
+                >
+                  {ROLES.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
                 </select>
               ) : u.role ? (
                 <span className={ROLE_BADGE[String(u.role).toLowerCase()] || "k-badge-gray"}>{u.role}</span>
               ) : null,
           },
-          { key: "last_login", header: "Last sign in", value: (u) => toDate(u.last_login), cell: (u) => (u.last_login ? fmtDate(u.last_login) : "Never") },
+          {
+            key: "last_login",
+            header: "Last sign in",
+            value: (u) => toDate(u.last_login),
+            cell: (u) => (u.last_login ? fmtDate(u.last_login) : "Never"),
+          },
         ]}
         rowActions={(u) => {
           const isSelf = myUserId && u.id === myUserId;
           return editId === u.id ? (
             <>
-              <RowAction tone="primary" disabled={loading} onClick={() => saveRole(u)}>Save</RowAction>
-              <RowAction disabled={loading} onClick={cancelEdit}>Cancel</RowAction>
+              <RowAction tone="primary" disabled={loading} onClick={() => saveRole(u)}>
+                Save
+              </RowAction>
+              <RowAction disabled={loading} onClick={cancelEdit}>
+                Cancel
+              </RowAction>
             </>
           ) : (
-            <RowAction disabled={loading || isSelf} title={isSelf ? "For safety, you can’t change your own role." : "Change role"} onClick={() => startEdit(u)}>
+            <RowAction
+              disabled={loading || isSelf}
+              title={isSelf ? "For safety, you can’t change your own role." : "Change role"}
+              onClick={() => startEdit(u)}
+            >
               Change role
             </RowAction>
           );

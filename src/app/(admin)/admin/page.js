@@ -1,4 +1,4 @@
-'use client';
+"use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/utils/supabaseClient";
@@ -9,7 +9,13 @@ const toDate = (v) => (v ? new Date(String(v).replace(" ", "T")) : null);
 function fmt(v) {
   const d = toDate(v);
   if (!d || isNaN(d)) return "—";
-  return d.toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 const LINKS = [
@@ -51,13 +57,11 @@ export default function Dashboard() {
     })();
   }, []);
 
-
   const rows = useMemo(() => {
     const now = new Date();
     // keys.machine_id normally holds the machine code (e.g. "A12"); older rows may hold machines.id.
     const findMachine = (mid) =>
-      machines.find((m) => String(m.machine_id) === String(mid)) ||
-      machines.find((m) => String(m.id) === String(mid));
+      machines.find((m) => String(m.machine_id) === String(mid)) || machines.find((m) => String(m.id) === String(mid));
     const inMachine = new Set(slots.filter((s) => s.UID).map((s) => String(s.UID).toUpperCase()));
 
     return keys.map((k) => {
@@ -65,9 +69,7 @@ export default function Dashboard() {
         .filter((c) => c.key_id && c.key_id === k.uuid)
         .map((c) => ({ ...c, _in: toDate(c.check_in), _out: toDate(c.check_out) }));
       const current = keyClients.find((c) => c._in && c._out && c._in <= now && now <= c._out);
-      const next = keyClients
-        .filter((c) => c._in && c._in > now)
-        .sort((a, b) => a._in - b._in)[0];
+      const next = keyClients.filter((c) => c._in && c._in > now).sort((a, b) => a._in - b._in)[0];
       return {
         id: k.id,
         keyLabel: k.key_id || k.UID || k.uuid || k.id,
@@ -81,8 +83,6 @@ export default function Dashboard() {
       };
     });
   }, [keys, machines, users, clients, slots]);
-
-
 
   const now = new Date();
   const stats = [
@@ -130,7 +130,11 @@ export default function Dashboard() {
       {errors.length > 0 && (
         <div className="k-alert-error mt-8">
           <p className="font-medium">Some data couldn’t be loaded.</p>
-          <ul className="mt-1 list-disc ml-5 text-[14px]">{errors.map((e) => <li key={e}>{e}</li>)}</ul>
+          <ul className="mt-1 list-disc ml-5 text-[14px]">
+            {errors.map((e) => (
+              <li key={e}>{e}</li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -152,15 +156,30 @@ export default function Dashboard() {
             { key: "relink", label: "Needs relink", test: (r) => !r.machine && !!r.machineRaw },
           ]}
           columns={[
-            { key: "key", header: "Key", mobile: "title", value: (r) => r.keyLabel, cell: (r) => <span className="font-medium">{r.keyLabel}</span> },
-            { key: "room", header: "Room", mobile: "subtitle", value: (r) => (r.room === "—" ? "" : r.room), cell: (r) => r.room },
+            {
+              key: "key",
+              header: "Key",
+              mobile: "title",
+              value: (r) => r.keyLabel,
+              cell: (r) => <span className="font-medium">{r.keyLabel}</span>,
+            },
+            {
+              key: "room",
+              header: "Room",
+              mobile: "subtitle",
+              value: (r) => (r.room === "—" ? "" : r.room),
+              cell: (r) => r.room,
+            },
             {
               key: "machine",
               header: "Machine",
               value: (r) => (r.machine ? `${r.machine["Machine name"] || ""} ${r.machine.machine_id}` : ""),
               cell: (r) =>
                 r.machine ? (
-                  <><div>{r.machine["Machine name"] || r.machine.machine_id}</div><div className="text-[12px] k-faint">{r.machine.machine_id}</div></>
+                  <>
+                    <div>{r.machine["Machine name"] || r.machine.machine_id}</div>
+                    <div className="text-[12px] k-faint">{r.machine.machine_id}</div>
+                  </>
                 ) : r.machineRaw ? (
                   <span className="k-badge-orange">Unknown · relink</span>
                 ) : (
@@ -171,7 +190,15 @@ export default function Dashboard() {
               key: "owner",
               header: "Owner",
               value: (r) => r.owner?.name || "",
-              cell: (r) => (r.owner ? <><div>{r.owner.name || "—"}</div><div className="text-[12px] k-faint">{r.owner.email}</div></> : <span className="k-faint">No owner</span>),
+              cell: (r) =>
+                r.owner ? (
+                  <>
+                    <div>{r.owner.name || "—"}</div>
+                    <div className="text-[12px] k-faint">{r.owner.email}</div>
+                  </>
+                ) : (
+                  <span className="k-faint">No owner</span>
+                ),
             },
             {
               key: "guest",
@@ -182,9 +209,13 @@ export default function Dashboard() {
                   <>
                     <div className="flex items-center gap-2">
                       {`${r.client.first_name || ""} ${r.client.last_name || ""}`.trim() || r.client.email}
-                      <span className={r.clientIsCurrent ? "k-badge-green" : "k-badge-blue"}>{r.clientIsCurrent ? "Now" : "Next"}</span>
+                      <span className={r.clientIsCurrent ? "k-badge-green" : "k-badge-blue"}>
+                        {r.clientIsCurrent ? "Now" : "Next"}
+                      </span>
                     </div>
-                    <div className="text-[12px] k-faint">{fmt(r.client.check_in)} → {fmt(r.client.check_out)}</div>
+                    <div className="text-[12px] k-faint">
+                      {fmt(r.client.check_in)} → {fmt(r.client.check_out)}
+                    </div>
                   </>
                 ) : (
                   <span className="k-faint">No booking</span>
@@ -194,10 +225,19 @@ export default function Dashboard() {
               key: "present",
               header: "Status",
               value: (r) => (r.present === null ? "" : r.present ? "In machine" : "Out"),
-              cell: (r) => (r.present === null ? null : r.present ? <span className="k-badge-green">● In machine</span> : <span className="k-badge-gray">Out</span>),
+              cell: (r) =>
+                r.present === null ? null : r.present ? (
+                  <span className="k-badge-green">● In machine</span>
+                ) : (
+                  <span className="k-badge-gray">Out</span>
+                ),
             },
           ]}
-          rowActions={() => <Link href="/link-owner" className="k-link text-[14px] px-2">Edit</Link>}
+          rowActions={() => (
+            <Link href="/link-owner" className="k-link text-[14px] px-2">
+              Edit
+            </Link>
+          )}
         />
       </div>
     </div>
