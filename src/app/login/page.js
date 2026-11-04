@@ -73,7 +73,7 @@ export default function LoginPage() {
     }
 
     try {
-      const emailRedirectTo = `${getSiteUrl()}/auth/callback`;
+      const emailRedirectTo = `${getSiteUrl()}/account-verified`;
 
       const { error: resendError } = await supabase.auth.resend({
         type: "signup",
@@ -106,7 +106,7 @@ export default function LoginPage() {
 
     try {
       const trimmedEmail = (email || "").trim().toLowerCase();
-      const trimmedPassword = (password || "").trim();
+      const trimmedPassword = password || ""; // don't trim: spaces can be part of a password
 
       if (!trimmedEmail || !trimmedPassword) {
         setError("Please enter both email and password.");
@@ -185,8 +185,7 @@ export default function LoginPage() {
 
       if (role === "admin") router.push("/admin");
       else if (role === "owner") router.push("/owner-panel");
-      else if (role === "client") router.push("/client-panel");
-      else router.push("/");
+            else router.push("/");
     } catch (e) {
       setError("An unexpected error occurred. Please try again.");
     } finally {

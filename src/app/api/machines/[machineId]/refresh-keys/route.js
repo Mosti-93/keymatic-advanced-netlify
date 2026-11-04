@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { requireRole } from "@/utils/requireRole";
 
 // Resolve which Pi URL we should talk to for a given machine ID
 function getMachineEndpoint(machineId) {
@@ -38,6 +39,10 @@ function buildSignature(cmd) {
 
 // Your Next.js version requires "await context" to read params
 export async function POST(request, context) {
+  // Only admins may send signed commands to a machine.
+  const auth = await requireRole(request, ["admin"]);
+  if (auth.response) return auth.response;
+
   const { params } = await context;
   const dashboardMachineId = params.machineId; // e.g. "A12"
 
@@ -95,7 +100,6 @@ const sig = buildSignature(cmd);
         ok: false,
         error: "Cannot reach machine",
         detail: String(err),
-        triedURL: url,
       }),
       { status: 502, headers: { "Content-Type": "application/json" } }
     );

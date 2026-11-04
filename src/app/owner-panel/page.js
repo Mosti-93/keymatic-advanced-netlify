@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/utils/supabaseClient";
+import { authHeaders } from "@/utils/requireRole";
 
 export default function OwnerPanelPage() {
   const router = useRouter();
@@ -98,7 +99,7 @@ async function handleStartPickup(client) {
   try {
     const res = await fetch("/api/pickup", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await authHeaders(supabase)) },
       body: JSON.stringify({
         clientId: client.id,
         clientEmail: client.email || "",
