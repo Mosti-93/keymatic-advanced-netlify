@@ -1,36 +1,62 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Keymatic
 
-## Getting Started
+Smart key pickup for rentals and hotels. Owners add guests, guests receive a
+personal link, and the Keymatic machine releases their key.
 
-First, run the development server:
+Built with **Next.js 16 (App Router)**, **React 19**, **Supabase** and **Tailwind CSS 4**.
+Deployed on **Netlify** (custom domain: `keymatic.myotp.site`).
+
+## Getting started
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env.local   # fill in the values
+npm run dev                  # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Scripts
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+| Command                           | What it does                                  |
+| --------------------------------- | --------------------------------------------- |
+| `npm run dev`                     | Start the dev server                          |
+| `npm run build`                   | Production build                              |
+| `npm test`                        | Run the test suite (Vitest + Testing Library) |
+| `npm run lint`                    | ESLint, fails on any warning                  |
+| `npm run format` / `format:check` | Prettier write / check                        |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+CI (`.github/workflows/ci.yml`) runs format check, lint, tests and build on every pull request.
 
-## Learn More
+## Environment variables
 
-To learn more about Next.js, take a look at the following resources:
+See [`.env.example`](.env.example). `NEXT_PUBLIC_*` values reach the browser;
+`SUPABASE_SERVICE_ROLE_KEY`, `SIGNING_SECRET` and `MACHINE_*_URL` are server-only
+and used by the API routes.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Project structure
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+src/
+  app/
+    (admin)/            Admin pages (URLs have no "(admin)"); layout checks the admin role
+      admin/            Overview dashboard
+      create-key/       Keys
+      create-machine/   Machines (+ refresh whitelist)
+      create-owner/     Owners
+      link-owner/       Assign keys to owners/machines
+      add-client/       Guests and pickups
+      users/            Users and roles
+    owner-panel/        Owner area
+    client-panel/       Guest area ("My stays")
+    pickup/[token]/     Guest pickup flow at the machine
+    api/                Server routes (all require a signed-in user with the right role)
+    login/ signup/ reset-password/ account-verified/
+  components/           AppShell (top bar), DataTable, PageHeader/Notice/FormPanel, Logo, AuthCard
+  lib/pickup.js         Pickup helpers (machine replies, timeouts, DB updates)
+  utils/                Supabase client, role guards (client + API), guest status, load-on-mount hook
+```
 
-## Deploy on Vercel
+## Conventions
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **UI**: use the `k-*` classes in `src/app/globals.css` and the shared components; every list uses `DataTable`.
+- **Access**: pages use `useRequireRole`; API routes use `requireRole`. Data must also be protected by Supabase RLS.
+- **Tests** live next to the code as `*.test.js(x)`.

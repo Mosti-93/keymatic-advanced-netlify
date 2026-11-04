@@ -18,7 +18,13 @@ function statusOf(c, now) {
 function fmt(v) {
   const d = toDate(v);
   if (!d || isNaN(d)) return "—";
-  return d.toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 const BADGE = {
@@ -39,7 +45,10 @@ export default function ClientPanel() {
     (async () => {
       setLoading(true);
       setError("");
-      const email = user.email.trim().toLowerCase().replace(/[\\%_]/g, "\\$&");
+      const email = user.email
+        .trim()
+        .toLowerCase()
+        .replace(/[\\%_]/g, "\\$&");
       const { data, error: qErr } = await supabase
         .from("clients")
         .select("id, first_name, last_name, key_id, check_in, check_out, platform")
@@ -80,7 +89,6 @@ export default function ClientPanel() {
     })();
   }, [checking, user]);
 
-
   if (checking) return <CheckingAccess />;
 
   const now = new Date();
@@ -103,7 +111,9 @@ export default function ClientPanel() {
         <div className="mt-10 k-fade-in-2">
           {loading ? (
             <div className="space-y-4">
-              {[0, 1].map((i) => <div key={i} className="h-40 rounded-[18px] bg-black/[0.04] animate-pulse" />)}
+              {[0, 1].map((i) => (
+                <div key={i} className="h-40 rounded-[18px] bg-black/[0.04] animate-pulse" />
+              ))}
             </div>
           ) : error ? (
             <div className="k-alert-error">{error}</div>
@@ -121,8 +131,13 @@ export default function ClientPanel() {
                   <div key={b.id} className={`k-card ${status === "Past" ? "opacity-70" : ""}`}>
                     <div className="flex items-start justify-between gap-4">
                       <div>
-                        <div className="text-[13px] k-muted">{b.machine ? b.machine["Machine name"] || b.machine.machine_id : "Your stay"}</div>
-                        <div className="mt-1 text-3xl font-semibold tracking-tight" style={{ letterSpacing: "-0.03em" }}>
+                        <div className="text-[13px] k-muted">
+                          {b.machine ? b.machine["Machine name"] || b.machine.machine_id : "Your stay"}
+                        </div>
+                        <div
+                          className="mt-1 text-3xl font-semibold tracking-tight"
+                          style={{ letterSpacing: "-0.03em" }}
+                        >
                           {b.room ? `Room ${b.room}` : "Booking"}
                         </div>
                       </div>

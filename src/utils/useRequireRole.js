@@ -18,7 +18,9 @@ export function useRequireRole(allowedRoles) {
   useEffect(() => {
     let active = true;
     (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       const user = session?.user;
       if (!user) {
         router.replace("/login");
@@ -29,7 +31,9 @@ export function useRequireRole(allowedRoles) {
         .select("id, name, email, role")
         .eq("id", user.id)
         .maybeSingle();
-      const role = String(profile?.role || "").trim().toLowerCase();
+      const role = String(profile?.role || "")
+        .trim()
+        .toLowerCase();
       if (!allowedKey.split(",").includes(role)) {
         router.replace("/login");
         return;
@@ -53,7 +57,10 @@ export function useRequireRole(allowedRoles) {
 export function CheckingAccess() {
   return (
     <div className="min-h-screen flex items-center justify-center">
-      <div className="h-7 w-7 rounded-full border-[2.5px] border-black/10 border-t-[#0071e3] animate-spin" aria-label="Loading" />
+      <div
+        className="h-7 w-7 rounded-full border-[2.5px] border-black/10 border-t-[#0071e3] animate-spin"
+        aria-label="Loading"
+      />
     </div>
   );
 }

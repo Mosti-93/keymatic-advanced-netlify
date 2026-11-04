@@ -150,60 +150,68 @@ export default function SignUpPage() {
       }
     >
       <form onSubmit={handleSignUp} className="space-y-4">
-          <div>
-            <label className="k-label" htmlFor="fullName">Full name</label>
-            <input
-              id="fullName"
-              type="text"
-              autoComplete="name"
-              value={fullName}
-              onChange={(e) => {
-                setFullName(e.target.value);
-                setError("");
-                setAlreadyRegistered(false);
-              }}
-              placeholder="Your name"
-              className="k-input"
-              required
-            />
-          </div>
-          <div>
-            <label className="k-label" htmlFor="email">Email</label>
-            <input
-              id="email"
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => {
-                setEmail(e.target.value);
-                setError("");
-                setAlreadyRegistered(false);
-              }}
-              placeholder="name@example.com"
-              className="k-input"
-              required
-            />
-          </div>
-          <div>
-            <label className="k-label" htmlFor="password">Password</label>
-            <input
-              id="password"
-              type="password"
-              autoComplete="new-password"
-              value={password}
-              onChange={(e) => {
-                setPassword(e.target.value);
-                setError("");
-                setAlreadyRegistered(false);
-              }}
-              placeholder="Choose a password"
-              className="k-input"
-              required
-            />
-          </div>
+        <div>
+          <label className="k-label" htmlFor="fullName">
+            Full name
+          </label>
+          <input
+            id="fullName"
+            type="text"
+            autoComplete="name"
+            value={fullName}
+            onChange={(e) => {
+              setFullName(e.target.value);
+              setError("");
+              setAlreadyRegistered(false);
+            }}
+            placeholder="Your name"
+            className="k-input"
+            required
+          />
+        </div>
+        <div>
+          <label className="k-label" htmlFor="email">
+            Email
+          </label>
+          <input
+            id="email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setError("");
+              setAlreadyRegistered(false);
+            }}
+            placeholder="name@example.com"
+            className="k-input"
+            required
+          />
+        </div>
+        <div>
+          <label className="k-label" htmlFor="password">
+            Password
+          </label>
+          <input
+            id="password"
+            type="password"
+            autoComplete="new-password"
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              setError("");
+              setAlreadyRegistered(false);
+            }}
+            placeholder="Choose a password"
+            className="k-input"
+            required
+          />
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
-            <label className="k-label" htmlFor="phone">Phone (optional)</label>
+            <label className="k-label" htmlFor="phone">
+              Phone (optional)
+            </label>
             <input
               id="phone"
               type="tel"
@@ -217,7 +225,9 @@ export default function SignUpPage() {
             />
           </div>
           <div>
-            <label className="k-label" htmlFor="country">Country (optional)</label>
+            <label className="k-label" htmlFor="country">
+              Country (optional)
+            </label>
             <input
               id="country"
               type="text"

@@ -31,10 +31,7 @@ function buildSignature(cmd) {
 
   // You used base64 earlier and it worked (20jj+TqK...= etc. looked like base64),
   // so we'll keep base64 here.
-  return crypto
-    .createHmac("sha256", SECRET_KEY)
-    .update(cmd, "utf8")
-    .digest("base64");
+  return crypto.createHmac("sha256", SECRET_KEY).update(cmd, "utf8").digest("base64");
 }
 
 // Your Next.js version requires "await context" to read params
@@ -58,24 +55,22 @@ export async function POST(request, context) {
     );
   }
 
-// 2. Build whitelist refresh command
-const now = new Date();
-const startTs = isoNoTZ(now);
+  // 2. Build whitelist refresh command
+  const now = new Date();
+  const startTs = isoNoTZ(now);
 
-// make it valid for, say, 24 hours instead of 10 minutes
-const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-const expTs = isoNoTZ(in24h);
+  // make it valid for, say, 24 hours instead of 10 minutes
+  const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const expTs = isoNoTZ(in24h);
 
-// then:
-const cmd = `PI:REFRESH_WHITELIST|machine=${dashboardMachineId}|start=${startTs}|exp=${expTs}`;
+  // then:
+  const cmd = `PI:REFRESH_WHITELIST|machine=${dashboardMachineId}|start=${startTs}|exp=${expTs}`;
 
-// 3. Sign it with HMAC so Pi accepts it
-const sig = buildSignature(cmd);
+  // 3. Sign it with HMAC so Pi accepts it
+  const sig = buildSignature(cmd);
 
   // 4. Send it to the Pi /action endpoint with timeout
-  const url = `${endpoint}/action?cmd=${encodeURIComponent(
-    cmd
-  )}&sig=${encodeURIComponent(sig)}`;
+  const url = `${endpoint}/action?cmd=${encodeURIComponent(cmd)}&sig=${encodeURIComponent(sig)}`;
 
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 5000);

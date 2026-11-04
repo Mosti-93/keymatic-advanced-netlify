@@ -1,11 +1,19 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/utils/supabaseClient";
 import AuthCard from "@/components/AuthCard";
 
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
 
   const [email, setEmail] = useState("");
@@ -42,11 +50,9 @@ export default function LoginPage() {
   };
 
   // Message shown after sign up ("?msg=verify_email_sent")
-  const [notice, setNotice] = useState("");
-  useEffect(() => {
-    const msg = new URLSearchParams(window.location.search).get("msg");
-    if (msg === "verify_email_sent") setNotice("Check your inbox to verify your email, then sign in.");
-  }, []);
+  const searchParams = useSearchParams();
+  const notice =
+    searchParams.get("msg") === "verify_email_sent" ? "Check your inbox to verify your email, then sign in." : "";
 
   const handleResendVerification = async () => {
     setResendMsg("");
@@ -109,9 +115,7 @@ export default function LoginPage() {
         const code = loginError.code || "";
 
         const isNotConfirmed =
-          code === "email_not_confirmed" ||
-          msg.includes("email not confirmed") ||
-          msg.includes("not confirmed");
+          code === "email_not_confirmed" || msg.includes("email not confirmed") || msg.includes("not confirmed");
 
         if (isNotConfirmed) {
           setError("Email not confirmed. Please verify your email to login.");
@@ -137,10 +141,7 @@ export default function LoginPage() {
 
       // Update last_login (won’t block login if it fails)
       try {
-        await supabase
-          .from("users")
-          .update({ last_login: new Date().toISOString() })
-          .eq("id", user.id);
+        await supabase.from("users").update({ last_login: new Date().toISOString() }).eq("id", user.id);
       } catch (_) {}
 
       // Fetch profile (RLS should allow only own row: id = auth.uid())
@@ -248,7 +249,9 @@ export default function LoginPage() {
       {!showForgot ? (
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
-            <label className="k-label" htmlFor="email">Email</label>
+            <label className="k-label" htmlFor="email">
+              Email
+            </label>
             <input
               id="email"
               type="email"
@@ -268,7 +271,9 @@ export default function LoginPage() {
 
           <div>
             <div className="flex items-center justify-between">
-              <label className="k-label" htmlFor="password">Password</label>
+              <label className="k-label" htmlFor="password">
+                Password
+              </label>
               <button
                 type="button"
                 className="text-[13px] k-link mb-1.5"
@@ -321,7 +326,9 @@ export default function LoginPage() {
       ) : (
         <form onSubmit={handleForgot} className="space-y-4">
           <div>
-            <label className="k-label" htmlFor="reset-email">Email</label>
+            <label className="k-label" htmlFor="reset-email">
+              Email
+            </label>
             <input
               id="reset-email"
               type="email"

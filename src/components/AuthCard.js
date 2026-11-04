@@ -10,7 +10,9 @@ export default function AuthCard({ title, subtitle, children, footer }) {
           <Link href="/" aria-label="Keymatic home" className="inline-block">
             <LogoMark size={52} />
           </Link>
-          <h1 className="mt-6 text-[32px] font-semibold tracking-tight" style={{ letterSpacing: "-0.03em" }}>{title}</h1>
+          <h1 className="mt-6 text-[32px] font-semibold tracking-tight" style={{ letterSpacing: "-0.03em" }}>
+            {title}
+          </h1>
           {subtitle && <p className="mt-2 text-[17px] k-muted">{subtitle}</p>}
         </div>
         <div className="k-card">{children}</div>

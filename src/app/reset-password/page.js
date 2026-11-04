@@ -1,4 +1,4 @@
-'use client';
+"use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/utils/supabaseClient";
@@ -48,7 +48,9 @@ export default function ResetPasswordPage() {
     <AuthCard title="Choose a new password" subtitle="Use at least 8 characters.">
       <form onSubmit={handleReset} className="space-y-4">
         <div>
-          <label className="k-label" htmlFor="new-password">New password</label>
+          <label className="k-label" htmlFor="new-password">
+            New password
+          </label>
           <input
             id="new-password"
             type="password"

@@ -18,7 +18,13 @@ export default function PageHeader({ eyebrow, title, subtitle, actions }) {
 export function Notice({ children, tone }) {
   if (!children) return null;
   const text = String(children);
-  const t = tone || (/fail|error|invalid|cannot|could not|couldn|❌/i.test(text) ? "error" : /✅|success|saved|updated|deleted|linked|sent/i.test(text) ? "success" : "info");
+  const t =
+    tone ||
+    (/fail|error|invalid|cannot|could not|couldn|❌/i.test(text)
+      ? "error"
+      : /✅|success|saved|updated|deleted|linked|sent/i.test(text)
+        ? "success"
+        : "info");
   const cls = t === "error" ? "k-alert-error" : t === "success" ? "k-alert-success" : "k-alert-info";
   return <div className={`${cls} mb-6`}>{children}</div>;
 }
@@ -28,5 +34,9 @@ export function Notice({ children, tone }) {
  * (e.g. while editing a row) keeps it open.
  */
 export function FormPanel({ title, addLabel = "Add", forceOpen = false, children }) {
-  return <FormPanelInner title={title} addLabel={addLabel} forceOpen={forceOpen}>{children}</FormPanelInner>;
+  return (
+    <FormPanelInner title={title} addLabel={addLabel} forceOpen={forceOpen}>
+      {children}
+    </FormPanelInner>
+  );
 }

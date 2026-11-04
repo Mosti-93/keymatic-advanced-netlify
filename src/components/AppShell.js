@@ -23,7 +23,9 @@ export default function AppShell({ nav = [], children, homeHref = "/" }) {
 
   const signOut = async () => {
     await supabase.auth.signOut();
-    try { localStorage.clear(); } catch {}
+    try {
+      localStorage.clear();
+    } catch {}
     router.replace("/login");
   };
 
@@ -72,7 +74,9 @@ export default function AppShell({ nav = [], children, homeHref = "/" }) {
               </button>
             )}
             {nav.length === 0 && (
-              <button onClick={signOut} className="md:hidden k-btn-secondary !py-1.5 !px-4 !text-[13px]">Sign out</button>
+              <button onClick={signOut} className="md:hidden k-btn-secondary !py-1.5 !px-4 !text-[13px]">
+                Sign out
+              </button>
             )}
           </div>
         </div>
@@ -90,7 +94,9 @@ export default function AppShell({ nav = [], children, homeHref = "/" }) {
                   {n.label}
                 </Link>
               ))}
-              <button onClick={signOut} className="py-3 text-left text-[17px] text-[#d70015]">Sign out</button>
+              <button onClick={signOut} className="py-3 text-left text-[17px] text-[#d70015]">
+                Sign out
+              </button>
             </nav>
           </div>
         )}

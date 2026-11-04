@@ -10,7 +10,12 @@ export function LogoMark({ size = 28 }) {
       </defs>
       <rect width="32" height="32" rx="9" fill="url(#km-g)" />
       <circle cx="12.5" cy="13" r="5" fill="none" stroke="#fff" strokeWidth="2.4" />
-      <path d="M16.2 16.6 L24 24.4 M20.6 21 L23 18.6 M22.6 23 L24.6 21" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" />
+      <path
+        d="M16.2 16.6 L24 24.4 M20.6 21 L23 18.6 M22.6 23 L24.6 21"
+        stroke="#fff"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }

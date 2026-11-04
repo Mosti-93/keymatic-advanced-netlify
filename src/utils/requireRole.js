@@ -33,7 +33,9 @@ export async function requireRole(request, allowedRoles) {
   if (userErr || !user) return { response: json({ error: "Invalid session" }, 401) };
 
   const { data: profile } = await sb.from("users").select("role").eq("id", user.id).maybeSingle();
-  const role = String(profile?.role || user.app_metadata?.role || "").trim().toLowerCase();
+  const role = String(profile?.role || user.app_metadata?.role || "")
+    .trim()
+    .toLowerCase();
 
   if (!allowedRoles.includes(role)) {
     return { response: json({ error: "Forbidden" }, 403) };

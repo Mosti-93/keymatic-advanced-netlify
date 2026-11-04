@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 /**
  * One table for the whole app: search, sort, filter tabs, pagination,
@@ -40,11 +40,21 @@ export default function DataTable({
   rowClassName,
   onRowClick,
 }) {
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState(defaultFilter || filters?.[0]?.key || null);
-  const [sort, setSort] = useState(defaultSort || null); // { key, dir: "asc" | "desc" }
-  const [pageSize, setPageSize] = useState(defaultPageSize);
+  const [query, setQueryRaw] = useState("");
+  const [filter, setFilterRaw] = useState(defaultFilter || filters?.[0]?.key || null);
+  const [sort, setSortRaw] = useState(defaultSort || null); // { key, dir: "asc" | "desc" }
+  const [pageSize, setPageSizeRaw] = useState(defaultPageSize);
   const [page, setPage] = useState(1);
+
+  // Any change to what is shown sends the user back to page 1.
+  const resetting = (setter) => (value) => {
+    setter(value);
+    setPage(1);
+  };
+  const setQuery = resetting(setQueryRaw);
+  const setFilter = resetting(setFilterRaw);
+  const setSort = resetting(setSortRaw);
+  const setPageSize = resetting(setPageSizeRaw);
 
   const valueOf = (col, row) => (col.value ? col.value(row) : row?.[col.key]);
 
@@ -61,24 +71,24 @@ export default function DataTable({
     const q = query.trim().toLowerCase();
     if (q) {
       const searchCols = columns.filter((c) => c.search !== false);
-      out = out.filter((row) =>
-        searchCols.some((c) => toText(valueOf(c, row)).toLowerCase().includes(q))
-      );
+      out = out.filter((row) => searchCols.some((c) => toText(valueOf(c, row)).toLowerCase().includes(q)));
     }
 
     if (sort) {
       const col = columns.find((c) => c.key === sort.key);
       if (col) {
         const dir = sort.dir === "desc" ? -1 : 1;
-        out = [...out].sort((a, b) => dir * compare(valueOf(col, a), valueOf(col, b)));
+        out = [...out].sort((a, b) => {
+          const va = valueOf(col, a);
+          const vb = valueOf(col, b);
+          // Blanks stay at the bottom in both directions.
+          if (isEmpty(va) || isEmpty(vb)) return isEmpty(va) - isEmpty(vb);
+          return dir * compare(va, vb);
+        });
       }
     }
     return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, columns, filters, filter, query, sort]);
-
-  // Go back to page 1 whenever the visible set changes shape.
-  useEffect(() => setPage(1), [query, filter, sort, pageSize]);
 
   const pageCount = Math.max(1, Math.ceil(processed.length / pageSize));
   const safePage = Math.min(page, pageCount);
@@ -87,11 +97,9 @@ export default function DataTable({
 
   const toggleSort = (col) => {
     if (col.sortable === false) return;
-    setSort((s) => {
-      if (!s || s.key !== col.key) return { key: col.key, dir: "asc" };
-      if (s.dir === "asc") return { key: col.key, dir: "desc" };
-      return null; // third click clears sorting
-    });
+    if (!sort || sort.key !== col.key) setSort({ key: col.key, dir: "asc" });
+    else if (sort.dir === "asc") setSort({ key: col.key, dir: "desc" });
+    else setSort(null); // third click clears sorting
   };
 
   const exportCsv = () => {
@@ -130,7 +138,13 @@ export default function DataTable({
           </div>
           <div className="flex items-center gap-2 w-full md:w-auto">
             <div className="relative flex-1 md:w-72">
-              <svg className="absolute left-3.5 top-1/2 -translate-y-1/2" width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+              <svg
+                className="absolute left-3.5 top-1/2 -translate-y-1/2"
+                width="15"
+                height="15"
+                viewBox="0 0 16 16"
+                aria-hidden="true"
+              >
                 <circle cx="7" cy="7" r="5.2" fill="none" stroke="#86868b" strokeWidth="1.6" />
                 <path d="M11 11l3.5 3.5" stroke="#86868b" strokeWidth="1.6" strokeLinecap="round" />
               </svg>
@@ -151,9 +165,21 @@ export default function DataTable({
                 </button>
               )}
             </div>
-            <button onClick={exportCsv} disabled={!processed.length} className="k-btn-secondary !py-2.5 !px-4 !text-[14px] shrink-0" title="Download as CSV (Excel)">
+            <button
+              onClick={exportCsv}
+              disabled={!processed.length}
+              className="k-btn-secondary !py-2.5 !px-4 !text-[14px] shrink-0"
+              title="Download as CSV (Excel)"
+            >
               <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M8 2v8m0 0l-3-3m3 3l3-3M3 12.5h10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                <path
+                  d="M8 2v8m0 0l-3-3m3 3l3-3M3 12.5h10"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
               </svg>
               <span className="hidden sm:inline">Export</span>
             </button>
@@ -179,7 +205,9 @@ export default function DataTable({
                   </button>
                 ))}
               </div>
-            ) : <span />}
+            ) : (
+              <span />
+            )}
             {toolbar && <div className="flex flex-wrap items-center gap-2">{toolbar}</div>}
           </div>
         )}
@@ -188,14 +216,18 @@ export default function DataTable({
       {/* Body */}
       {loading ? (
         <div className="px-5 sm:px-7 pb-7 space-y-3">
-          {[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-12 rounded-xl bg-black/[0.04] animate-pulse" />)}
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-12 rounded-xl bg-black/[0.04] animate-pulse" />
+          ))}
         </div>
       ) : processed.length === 0 ? (
         <div className="px-6 pb-12 pt-6 text-center">
           <div className="text-3xl">{query ? "🔍" : "🗂️"}</div>
           <p className="mt-3 font-medium">{query ? `No results for “${query}”` : emptyText}</p>
           {query && (
-            <button className="k-link text-[14px] mt-1" onClick={() => setQuery("")}>Clear search</button>
+            <button className="k-link text-[14px] mt-1" onClick={() => setQuery("")}>
+              Clear search
+            </button>
           )}
         </div>
       ) : (
@@ -221,7 +253,10 @@ export default function DataTable({
                   </dl>
                 )}
                 {rowActions && (
-                  <div className="mt-3 pt-3 border-t border-black/5 flex flex-wrap gap-2" onClick={(e) => e.stopPropagation()}>
+                  <div
+                    className="mt-3 pt-3 border-t border-black/5 flex flex-wrap gap-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     {rowActions(row)}
                   </div>
                 )}
@@ -269,7 +304,12 @@ export default function DataTable({
                     onClick={onRowClick ? () => onRowClick(row) : undefined}
                   >
                     {columns.map((c) => (
-                      <td key={c.key} className={`${c.align === "right" ? "text-right" : ""} ${c.nowrap ? "whitespace-nowrap" : ""}`}>{render(c, row)}</td>
+                      <td
+                        key={c.key}
+                        className={`${c.align === "right" ? "text-right" : ""} ${c.nowrap ? "whitespace-nowrap" : ""}`}
+                      >
+                        {render(c, row)}
+                      </td>
                     ))}
                     {rowActions && (
                       <td className="text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
@@ -298,14 +338,24 @@ export default function DataTable({
                   onChange={(e) => setPageSize(Number(e.target.value))}
                   className="rounded-lg bg-[#f5f5f7] px-2 py-1 text-[#1d1d1f] outline-none"
                 >
-                  {pageSizes.map((n) => <option key={n} value={n}>{n}</option>)}
+                  {pageSizes.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
                 </select>
               </label>
               {pageCount > 1 && (
                 <div className="flex items-center gap-1">
-                  <PageBtn disabled={safePage === 1} onClick={() => setPage(safePage - 1)} label="Previous page">‹</PageBtn>
-                  <span className="px-2 text-[#1d1d1f]">{safePage} / {pageCount}</span>
-                  <PageBtn disabled={safePage === pageCount} onClick={() => setPage(safePage + 1)} label="Next page">›</PageBtn>
+                  <PageBtn disabled={safePage === 1} onClick={() => setPage(safePage - 1)} label="Previous page">
+                    ‹
+                  </PageBtn>
+                  <span className="px-2 text-[#1d1d1f]">
+                    {safePage} / {pageCount}
+                  </span>
+                  <PageBtn disabled={safePage === pageCount} onClick={() => setPage(safePage + 1)} label="Next page">
+                    ›
+                  </PageBtn>
                 </div>
               )}
             </div>
@@ -320,7 +370,13 @@ export default function DataTable({
 
 function SortIcon({ dir }) {
   return (
-    <svg width="9" height="12" viewBox="0 0 9 12" aria-hidden="true" className={dir ? "" : "opacity-0 group-hover:opacity-60 transition-opacity"}>
+    <svg
+      width="9"
+      height="12"
+      viewBox="0 0 9 12"
+      aria-hidden="true"
+      className={dir ? "" : "opacity-0 group-hover:opacity-60 transition-opacity"}
+    >
       <path d="M4.5 1L8 5H1z" fill={dir === "asc" ? "#0071e3" : dir ? "#c7c7cc" : "#86868b"} />
       <path d="M4.5 11L1 7h7z" fill={dir === "desc" ? "#0071e3" : dir ? "#c7c7cc" : "#86868b"} />
     </svg>
@@ -365,11 +421,11 @@ function toText(v) {
   return String(v);
 }
 
+function isEmpty(v) {
+  return v === null || v === undefined || v === "" || (v instanceof Date && isNaN(v));
+}
+
 function compare(a, b) {
-  const empty = (v) => v === null || v === undefined || v === "" || (v instanceof Date && isNaN(v));
-  if (empty(a) && empty(b)) return 0;
-  if (empty(a)) return 1; // blanks always last
-  if (empty(b)) return -1;
   if (a instanceof Date && b instanceof Date) return a - b;
   if (typeof a === "number" && typeof b === "number") return a - b;
   if (typeof a === "boolean" && typeof b === "boolean") return a === b ? 0 : a ? -1 : 1;
