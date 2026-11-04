@@ -3,14 +3,9 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams } from "next/navigation";
 import Image from "next/image";
-import { supabase } from "@/utils/supabaseClient";
 import {
-  TABLE_NAME,
-  TOKEN_COLUMN,
-  DB_COLUMNS,
   formatName,
   fetchWithTimeout,
-  invalidateByUID,
   extractStatusText,
   isRelayOnSuccess,
   parseLimitSwitch,
@@ -61,21 +56,13 @@ export default function Page() {
           return;
         }
 
-        const { data: row, error: qErr } = await supabase
-          .from(TABLE_NAME)
-          .select(DB_COLUMNS)
-          .eq(TOKEN_COLUMN, linkToken)
-
-          .single();
-
-        if (qErr) {
-          if (qErr.code === "PGRST116" || qErr.details?.includes("Results contain 0 rows")) {
-            setError("Invalid or not found.");
-          } else {
-            setError("Database error: " + (qErr.message || "unknown"));
-          }
+        const res = await fetch(`/api/pickup-link/${encodeURIComponent(linkToken)}`, { cache: "no-store" });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setError(res.status === 404 ? "Invalid or not found." : payload.error || "Could not load this pickup link.");
           return;
         }
+        const row = payload.row;
 
         const now = new Date();
         const expiredByDate = row.check_out ? now > new Date(row.check_out) : false;
@@ -109,21 +96,7 @@ export default function Page() {
           lcdOffUrl: row.LCD_off_req || "",
         });
 
-        try {
-          let fetchedUID = null;
-          if (row.room_no) {
-            const { data: krow, error: kErr } = await supabase
-              .from("keys")
-              .select("UID")
-              .eq("room_number", row.room_no)
-              .maybeSingle();
-            if (kErr) console.warn("[load] keys lookup error:", kErr);
-            fetchedUID = krow?.UID ?? null;
-          }
-          setData((prev) => ({ ...prev, uid: fetchedUID }));
-        } catch (e) {
-          console.warn("[load] UID fetch failed:", e);
-        }
+        setData((prev) => ({ ...prev, uid: payload.uid ?? null }));
       } catch (e) {
         setError("Unexpected error: " + (e?.message || String(e)));
       } finally {
@@ -319,12 +292,8 @@ export default function Page() {
 
         // 1) Mark DB state (invalidate link, mark key out, clear slot)
         try {
-          await invalidateByUID(supabase, {
-            token: linkToken, // <-- use normalized token
-            uid: data.uid,
-            machineId: data.machineId,
-            roomNo: data.roomNo,
-          });
+          const done = await fetch(`/api/pickup-link/${encodeURIComponent(linkToken)}/complete`, { method: "POST" });
+          if (!done.ok) console.warn("complete pickup failed:", done.status);
         } catch (e) {
           console.warn("invalidateByUID failed:", e);
         }

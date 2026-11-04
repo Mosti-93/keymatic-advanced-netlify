@@ -13,7 +13,7 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./vitest.setup.mjs"],
-    include: ["src/**/*.test.{js,jsx,ts,tsx}"],
+    include: ["src/**/*.test.{js,jsx,ts,tsx}", "supabase/**/*.test.js"],
     coverage: { provider: "v8", include: ["src/lib/**", "src/utils/**", "src/components/**"] },
   },
 });

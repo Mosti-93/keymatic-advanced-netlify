@@ -60,3 +60,28 @@ src/
 - **UI**: use the `k-*` classes in `src/app/globals.css` and the shared components; every list uses `DataTable`.
 - **Access**: pages use `useRequireRole`; API routes use `requireRole`. Data must also be protected by Supabase RLS.
 - **Tests** live next to the code as `*.test.js(x)`.
+
+## Database security (Row Level Security)
+
+Rules live in [`supabase/`](supabase) and are tested against a real Postgres (PGlite) in `supabase/rls.test.js`.
+
+| File                           | Purpose                                                                                                              |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `audit.sql`                    | Read-only: shows tables, RLS status, existing policies and grants. Run and save first.                               |
+| `migrations/…_rls_phase_a.sql` | Locks `users`, `clients`, `pickup_requests`.                                                                         |
+| `migrations/…_rls_phase_b.sql` | Locks `keys`, `key_slot_presence`, `machines`. **Only after confirming the Raspberry Pi uses the service role key.** |
+| `rollback_rls.sql`             | Undo both phases.                                                                                                    |
+
+Who can do what after both phases:
+
+|                   | Anonymous | Guest (client)          | Owner                      | Admin | Server (service role) |
+| ----------------- | --------- | ----------------------- | -------------------------- | ----- | --------------------- |
+| users             | —         | own row                 | own row                    | all   | all                   |
+| clients           | —         | own bookings (by email) | own guests                 | all   | all                   |
+| keys              | —         | own booking's key       | own keys (read)            | all   | all                   |
+| key_slot_presence | —         | —                       | slots with own keys (read) | all   | all                   |
+| machines          | —         | read                    | read                       | all   | all                   |
+| pickup_requests   | —         | —                       | —                          | —     | all                   |
+
+Roles can only be changed by an admin (trigger). The guest pickup page reads and completes bookings through
+`/api/pickup-link/[token]`, so guests never touch the database directly.
