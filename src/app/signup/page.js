@@ -26,14 +26,15 @@ export default function SignUpPage() {
 
   const getEmailRedirectTo = () => {
     // Must be allowed in Supabase Auth URL Configuration
-    return `${getOrigin()}/auth/callback`;
+    return `${getOrigin()}/account-verified`;
   };
 
   const checkEmailExistsInUsersTable = async (trimmedEmail) => {
     const { data, error } = await supabase
       .from("users")
       .select("id")
-      .ilike("email", trimmedEmail)
+      .ilike("email", trimmedEmail.replace(/[\\%_]/g, "\\$&"))
+      .limit(1)
       .maybeSingle();
 
     if (error) return { ok: false, exists: null, message: error.message };

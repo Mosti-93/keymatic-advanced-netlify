@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from "react";
 import { supabase } from "@/utils/supabaseClient";
+import { authHeaders } from "@/utils/requireRole";
 
 export default function AddClientPage() {
   const [form, setForm] = useState({
@@ -240,7 +241,7 @@ export default function AddClientPage() {
 
       const res = await fetch("/api/pickup", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await authHeaders(supabase)) },
         body: JSON.stringify(pickupPayload),
       });
 

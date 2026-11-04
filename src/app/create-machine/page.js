@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/utils/supabaseClient";
+import { authHeaders } from "@/utils/requireRole";
 
 export default function CreateMachinePage() {
   const router = useRouter();
@@ -204,7 +205,7 @@ export default function CreateMachinePage() {
     try {
       const res = await fetch(`/api/machines/${machineId}/refresh-keys`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders(supabase)) },
         body: JSON.stringify({ confirm: true }),
       });
       const data = await res.json().catch(() => ({}));

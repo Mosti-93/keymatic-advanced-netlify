@@ -1,6 +1,12 @@
+import { requireRole } from "@/utils/requireRole";
+
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 export async function POST(request) {
+  // Only signed-in admins/owners may start a pickup (this route uses the service role key).
+  const auth = await requireRole(request, ["admin", "owner"]);
+  if (auth.response) return auth.response;
+
   try {
     const body = await request.json();
 
