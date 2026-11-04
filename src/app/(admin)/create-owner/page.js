@@ -177,12 +177,12 @@ export default function CreateOwnerPage() {
           columns={[
             {
               key: "name",
-              header: "Name",
               mobile: "title",
+              header: "Name",
               cell: (o) => <span className="font-medium">{o.name}</span>,
             },
-            { key: "email", header: "Email", mobile: "subtitle" },
-            { key: "phone", header: "Phone" },
+            { key: "email", mobile: "meta", header: "Email" },
+            { key: "phone", mobile: "meta", header: "Phone" },
             { key: "country", header: "Country" },
             {
               key: "last_login",

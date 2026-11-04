@@ -295,14 +295,16 @@ export default function CreateMachinePage() {
           columns={[
             {
               key: "machine_id",
-              header: "ID",
               mobile: "title",
+              header: "ID",
               value: (m) => (m.machine_id || "").trim(),
               cell: (m) => <span className="font-medium">{(m.machine_id || "").trim()}</span>,
             },
-            { key: "name", header: "Name", mobile: "subtitle", value: (m) => m["Machine name"] },
+            { key: "name", mobile: "subtitle", header: "Name", value: (m) => m["Machine name"] },
             {
               key: "place",
+              mobile: "meta",
+              mobileText: (m) => m.machine_address || "",
               header: "Address",
               value: (m) => m.machine_address || (isUrl(m.location) ? "" : m.location),
               cell: (m) => (
@@ -320,6 +322,11 @@ export default function CreateMachinePage() {
             },
             {
               key: "capacity",
+              mobile: "meta",
+              mobileText: (m) => {
+                const u = usage(m);
+                return u.cap ? `${u.reg ?? 0} of ${u.cap} keys` : "";
+              },
               header: "Keys / capacity",
               value: (m) => {
                 const u = usage(m);

@@ -107,6 +107,40 @@ describe("DataTable", () => {
     expect(onRowClick).not.toHaveBeenCalled();
   });
 
+  it("phone list: compact rows that expand to show details and actions", async () => {
+    const user = userEvent.setup();
+    const onEdit = vi.fn();
+    render(
+      <DataTable
+        rows={[{ id: 1, name: "Lina", room: "204", city: "Cairo", status: "in" }]}
+        columns={[
+          { key: "name", header: "Guest", mobile: "title" },
+          { key: "room", header: "Room", mobile: "meta", mobileText: (r) => `Room ${r.room}` },
+          {
+            key: "status",
+            header: "Status",
+            mobile: "badge",
+            mobileCell: (r) => <span>{r.status === "in" ? "In" : "Out"}</span>,
+          },
+          { key: "city", header: "City" },
+        ]}
+        rowActions={(r) => <RowAction onClick={() => onEdit(r.id)}>Edit</RowAction>}
+      />
+    );
+    const list = screen.getByRole("list");
+    const row = within(list).getByRole("button", { expanded: false });
+    expect(row).toHaveTextContent("Lina");
+    expect(row).toHaveTextContent("Room 204");
+    expect(row).toHaveTextContent("In");
+    expect(within(list).queryByText("Cairo")).not.toBeInTheDocument();
+
+    await user.click(row);
+    expect(row).toHaveAttribute("aria-expanded", "true");
+    expect(within(list).getByText("Cairo")).toBeInTheDocument();
+    await user.click(within(list).getByRole("button", { name: "Edit" }));
+    expect(onEdit).toHaveBeenCalledWith(1);
+  });
+
   it("shows a skeleton while loading and an empty message when there is no data", () => {
     const { rerender, container } = render(<DataTable rows={[]} columns={columns} loading />);
     expect(container.querySelectorAll(".animate-pulse").length).toBeGreaterThan(0);

@@ -474,16 +474,17 @@ export default function AddClientPage() {
           columns={[
             {
               key: "name",
-              header: "Guest",
               mobile: "title",
+              header: "Guest",
               nowrap: true,
               value: (c) => `${c.first_name || ""} ${c.last_name || ""}`.trim(),
               cell: (c) => <span className="font-medium">{`${c.first_name || ""} ${c.last_name || ""}`.trim()}</span>,
             },
             {
               key: "room",
+              mobile: "meta",
+              mobileText: (c) => (keyFor(c)?.room_number ? `Room ${keyFor(c).room_number}` : ""),
               header: "Room",
-              mobile: "subtitle",
               value: (c) => keyFor(c)?.room_number || "",
               cell: (c) => {
                 const k = keyFor(c);
@@ -497,6 +498,7 @@ export default function AddClientPage() {
             },
             {
               key: "status",
+              mobile: "badge",
               header: "Status",
               value: (c) => STATUS_BADGE[guestStatus(c)][1],
               cell: (c) => {
@@ -506,6 +508,8 @@ export default function AddClientPage() {
             },
             {
               key: "check_in",
+              mobile: "meta",
+              mobileText: (c) => `${fmtDate(c.check_in)} → ${fmtDate(c.check_out)}`,
               header: "Check-in",
               nowrap: true,
               value: (c) => toDate(c.check_in),
@@ -513,6 +517,7 @@ export default function AddClientPage() {
             },
             {
               key: "check_out",
+              mobile: "hide",
               header: "Check-out",
               nowrap: true,
               value: (c) => toDate(c.check_out),

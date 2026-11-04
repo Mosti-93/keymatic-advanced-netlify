@@ -306,8 +306,8 @@ export default function CreateKeyPage() {
           columns={[
             {
               key: "key_id",
-              header: "Key",
               mobile: "title",
+              header: "Key",
               cell: (k) => <span className="font-medium">{k.key_id}</span>,
             },
             {
@@ -315,7 +315,12 @@ export default function CreateKeyPage() {
               header: "UID",
               cell: (k) => (k.UID ? <code className="text-[12px] k-muted">{k.UID}</code> : null),
             },
-            { key: "room_number", header: "Room", mobile: "subtitle" },
+            {
+              key: "room_number",
+              mobile: "subtitle",
+              mobileCell: (k) => (k.room_number ? `Room ${k.room_number}` : ""),
+              header: "Room",
+            },
             {
               key: "room",
               header: "Address",
@@ -335,6 +340,11 @@ export default function CreateKeyPage() {
             },
             {
               key: "machine",
+              mobile: "meta",
+              mobileText: (k) => {
+                const m = getMachine(k.machine_id);
+                return m ? m.machine_name : k.machine_id ? "Needs relink" : "No machine";
+              },
               header: "Machine",
               value: (k) => {
                 const m = getMachine(k.machine_id);
@@ -354,6 +364,8 @@ export default function CreateKeyPage() {
             },
             {
               key: "owner",
+              mobile: "meta",
+              mobileText: (k) => getOwner(k.owner_id)?.name || "No owner",
               header: "Owner",
               value: (k) => getOwner(k.owner_id)?.name || "",
               cell: (k) => {
