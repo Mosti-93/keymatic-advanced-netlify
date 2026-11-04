@@ -1,6 +1,5 @@
 'use client';
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/utils/supabaseClient";
 
@@ -13,16 +12,15 @@ function fmt(v) {
 }
 
 const LINKS = [
-  { href: "/create-key", label: "🔑 Keys", color: "bg-blue-600 hover:bg-blue-700" },
-  { href: "/create-owner", label: "👤 Owners", color: "bg-purple-600 hover:bg-purple-700" },
-  { href: "/create-machine", label: "🏭 Machines", color: "bg-green-600 hover:bg-green-700" },
-  { href: "/users", label: "👥 Users", color: "bg-yellow-500 hover:bg-yellow-600" },
-  { href: "/link-owner", label: "🔗 Link Owner", color: "bg-pink-500 hover:bg-pink-600" },
-  { href: "/add-client", label: "🧳 Clients", color: "bg-indigo-500 hover:bg-indigo-600" },
+  { href: "/create-key", label: "Keys", hint: "Add and edit keys", icon: "🔑" },
+  { href: "/create-machine", label: "Machines", hint: "Machines and slots", icon: "🏭" },
+  { href: "/add-client", label: "Guests", hint: "Bookings and pickups", icon: "🧳" },
+  { href: "/create-owner", label: "Owners", hint: "Property owners", icon: "👤" },
+  { href: "/link-owner", label: "Link Owner", hint: "Assign keys", icon: "🔗" },
+  { href: "/users", label: "Users", hint: "Roles and access", icon: "👥" },
 ];
 
 export default function Dashboard() {
-  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState([]);
   const [keys, setKeys] = useState([]);
@@ -53,11 +51,6 @@ export default function Dashboard() {
     })();
   }, []);
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    localStorage.clear();
-    router.replace("/login");
-  };
 
   const rows = useMemo(() => {
     const now = new Date();
@@ -109,119 +102,178 @@ export default function Dashboard() {
     },
   ];
 
+  const hour = now.getHours();
+  const greeting = hour < 12 ? "Good morning." : hour < 18 ? "Good afternoon." : "Good evening.";
+
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-800">
-      <header className="bg-white shadow flex items-center justify-between px-6 py-4">
-        <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Keymatic Dashboard</h1>
-        <button onClick={handleLogout} className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition">
-          Log out
-        </button>
-      </header>
+    <div className="k-page">
+      <div className="k-fade-in">
+        <p className="k-eyebrow">Overview</p>
+        <h1 className="k-title mt-2">{greeting}</h1>
+        <p className="k-subtitle">Here’s everything happening across your machines.</p>
+      </div>
 
-      <main className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
-          {LINKS.map((l) => (
-            <Link key={l.href} href={l.href} className={`flex items-center justify-center p-5 text-white rounded-xl shadow transition text-lg font-semibold ${l.color}`}>
-              {l.label}
-            </Link>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          {stats.map((s) => (
-            <div key={s.label} className="bg-white rounded-lg shadow p-4">
-              <div className="text-sm text-gray-500">{s.label}</div>
-              <div className="text-3xl font-bold">{loading ? "…" : s.value}</div>
+      <div className="mt-10 grid grid-cols-2 lg:grid-cols-4 gap-4 k-fade-in-2">
+        {stats.map((s) => (
+          <div key={s.label} className="k-card !p-6">
+            <div className="text-[13px] k-muted">{s.label}</div>
+            <div className="mt-1 text-4xl font-semibold tracking-tight" style={{ letterSpacing: "-0.03em" }}>
+              {loading ? <span className="inline-block h-9 w-12 rounded-lg bg-black/5 animate-pulse" /> : s.value}
             </div>
-          ))}
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 md:grid-cols-3 gap-4 k-fade-in-3">
+        {LINKS.map((l) => (
+          <Link key={l.href} href={l.href} className="k-tile">
+            <div className="text-2xl">{l.icon}</div>
+            <div className="mt-3 text-[17px] font-semibold">{l.label}</div>
+            <div className="text-[14px] k-muted">{l.hint}</div>
+          </Link>
+        ))}
+      </div>
+
+      {errors.length > 0 && (
+        <div className="k-alert-error mt-8">
+          <p className="font-medium">Some data couldn’t be loaded.</p>
+          <ul className="mt-1 list-disc ml-5 text-[14px]">{errors.map((e) => <li key={e}>{e}</li>)}</ul>
+        </div>
+      )}
+
+      <section className="k-card mt-10 !p-0 overflow-hidden">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-6 sm:p-8 pb-4 sm:pb-4">
+          <div>
+            <h2 className="k-h2">Keys</h2>
+            <p className="text-[14px] k-muted mt-1">Every key, where it is, and who it’s for.</p>
+          </div>
+          <div className="relative w-full md:w-80">
+            <svg className="absolute left-3.5 top-1/2 -translate-y-1/2" width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="7" cy="7" r="5.2" fill="none" stroke="#86868b" strokeWidth="1.6" />
+              <path d="M11 11l3.5 3.5" stroke="#86868b" strokeWidth="1.6" strokeLinecap="round" />
+            </svg>
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search" className="k-input !pl-10 !py-2.5 !rounded-full !bg-[#f5f5f7] !border-transparent" />
+          </div>
         </div>
 
-        {errors.length > 0 && (
-          <div className="mb-6 p-4 rounded bg-red-50 text-red-700">
-            <p className="font-semibold">Some data could not be loaded:</p>
-            <ul className="list-disc ml-6">{errors.map((e) => <li key={e}>{e}</li>)}</ul>
+        {loading ? (
+          <div className="px-8 pb-8 space-y-3">
+            {[0, 1, 2, 3].map((i) => <div key={i} className="h-12 rounded-xl bg-black/[0.04] animate-pulse" />)}
           </div>
-        )}
-
-        <div className="bg-white shadow rounded-lg p-6">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-            <h2 className="text-xl font-semibold">📋 Keys overview</h2>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search key, room, machine, owner, guest…"
-              className="border rounded px-3 py-2 w-full md:w-80"
-            />
+        ) : filtered.length === 0 ? (
+          <p className="px-8 pb-10 k-muted">No keys match your search.</p>
+        ) : (
+          <>
+          {/* Phones: one card per key */}
+          <div className="md:hidden px-4 pb-4 space-y-3">
+            {filtered.map((r) => (
+              <Link key={r.id} href="/link-owner" className="block rounded-2xl bg-[#f5f5f7] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-semibold">{r.keyLabel}</div>
+                    <div className="text-[13px] k-muted">Room {r.room}</div>
+                  </div>
+                  {r.present === null ? null : r.present ? (
+                    <span className="k-badge-green">● In machine</span>
+                  ) : (
+                    <span className="k-badge-gray">Out</span>
+                  )}
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-3 text-[13px]">
+                  <div>
+                    <div className="k-faint">Machine</div>
+                    {r.machine ? (
+                      <div>{r.machine["Machine name"] || r.machine.machine_id}</div>
+                    ) : r.machineRaw ? (
+                      <span className="k-badge-orange">Relink</span>
+                    ) : (
+                      <div className="k-faint">Not linked</div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="k-faint">Owner</div>
+                    <div className="truncate">{r.owner?.name || "—"}</div>
+                  </div>
+                </div>
+                {r.client && (
+                  <div className="mt-3 text-[13px]">
+                    <span className={r.clientIsCurrent ? "k-badge-green" : "k-badge-blue"}>{r.clientIsCurrent ? "Now" : "Next"}</span>{" "}
+                    {`${r.client.first_name || ""} ${r.client.last_name || ""}`.trim()}
+                    <div className="k-faint mt-1">{fmt(r.client.check_in)} → {fmt(r.client.check_out)}</div>
+                  </div>
+                )}
+              </Link>
+            ))}
           </div>
 
-          {loading ? (
-            <p className="text-gray-500">Loading…</p>
-          ) : filtered.length === 0 ? (
-            <p className="text-gray-500">No keys found.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full border border-gray-200 text-sm">
-                <thead className="bg-gray-100 text-xs uppercase text-gray-500">
-                  <tr>
-                    {["Key", "Room", "Machine", "Owner", "Guest", "In machine", ""].map((h) => (
-                      <th key={h} className="px-3 py-2 border border-gray-200 text-left">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((r) => (
-                    <tr key={r.id} className="hover:bg-gray-50 align-top">
-                      <td className="px-3 py-2 border border-gray-200 font-medium">{r.keyLabel}</td>
-                      <td className="px-3 py-2 border border-gray-200">{r.room}</td>
-                      <td className="px-3 py-2 border border-gray-200">
-                        {r.machine ? (
-                          <>
-                            {r.machine["Machine name"] || r.machine.machine_id}
-                            <div className="text-xs text-gray-500">{r.machine.machine_id}{r.machine.location ? ` · ${r.machine.location}` : ""}</div>
-                          </>
-                        ) : r.machineRaw ? (
-                          <span className="text-orange-600">Unknown ({String(r.machineRaw)})</span>
-                        ) : (
-                          <span className="text-gray-400">Not linked</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 border border-gray-200">
-                        {r.owner ? (
-                          <>
-                            {r.owner.name || "—"}
-                            <div className="text-xs text-gray-500">{r.owner.email}</div>
-                          </>
-                        ) : (
-                          <span className="text-gray-400">No owner</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 border border-gray-200">
-                        {r.client ? (
-                          <>
+          {/* Larger screens: table */}
+          <div className="hidden md:block overflow-x-auto px-2 sm:px-4 pb-4">
+            <table className="k-table">
+              <thead>
+                <tr>
+                  {["Key", "Room", "Machine", "Owner", "Guest", "In machine", ""].map((h) => <th key={h}>{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((r) => (
+                  <tr key={r.id}>
+                    <td className="font-medium">{r.keyLabel}</td>
+                    <td>{r.room}</td>
+                    <td>
+                      {r.machine ? (
+                        <>
+                          <div>{r.machine["Machine name"] || r.machine.machine_id}</div>
+                          <div className="text-[12px] k-faint">{r.machine.machine_id}</div>
+                        </>
+                      ) : r.machineRaw ? (
+                        <span className="k-badge-orange">Unknown · relink</span>
+                      ) : (
+                        <span className="k-faint">Not linked</span>
+                      )}
+                    </td>
+                    <td>
+                      {r.owner ? (
+                        <>
+                          <div>{r.owner.name || "—"}</div>
+                          <div className="text-[12px] k-faint">{r.owner.email}</div>
+                        </>
+                      ) : (
+                        <span className="k-faint">No owner</span>
+                      )}
+                    </td>
+                    <td>
+                      {r.client ? (
+                        <>
+                          <div className="flex items-center gap-2">
                             {`${r.client.first_name || ""} ${r.client.last_name || ""}`.trim() || r.client.email}
-                            <span className={`ml-2 text-xs px-2 py-0.5 rounded ${r.clientIsCurrent ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>
-                              {r.clientIsCurrent ? "Now" : "Next"}
-                            </span>
-                            <div className="text-xs text-gray-500">{fmt(r.client.check_in)} → {fmt(r.client.check_out)}</div>
-                          </>
-                        ) : (
-                          <span className="text-gray-400">No booking</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 border border-gray-200">
-                        {r.present === null ? <span className="text-gray-400">No UID</span> : r.present ? "✅ Yes" : "❌ No"}
-                      </td>
-                      <td className="px-3 py-2 border border-gray-200">
-                        <Link href="/link-owner" className="text-blue-600 hover:underline">Edit</Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </main>
+                            <span className={r.clientIsCurrent ? "k-badge-green" : "k-badge-blue"}>{r.clientIsCurrent ? "Now" : "Next"}</span>
+                          </div>
+                          <div className="text-[12px] k-faint">{fmt(r.client.check_in)} → {fmt(r.client.check_out)}</div>
+                        </>
+                      ) : (
+                        <span className="k-faint">No booking</span>
+                      )}
+                    </td>
+                    <td>
+                      {r.present === null ? (
+                        <span className="k-faint">—</span>
+                      ) : r.present ? (
+                        <span className="k-badge-green">● In machine</span>
+                      ) : (
+                        <span className="k-badge-gray">Out</span>
+                      )}
+                    </td>
+                    <td className="text-right">
+                      <Link href="/link-owner" className="k-link text-[14px]">Edit</Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          </>
+        )}
+      </section>
     </div>
   );
 }

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/utils/supabaseClient";
+import AuthCard from "@/components/AuthCard";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -40,27 +41,12 @@ export default function LoginPage() {
     );
   };
 
-  const resetMsgClass = useMemo(() => {
-    if (!resetMsg) return "";
-    return isErrorText(resetMsg) ? "text-red-600" : "text-green-700";
-  }, [resetMsg]);
-
-  const resendMsgClass = useMemo(() => {
-    if (!resendMsg) return "";
-    return isErrorText(resendMsg) ? "text-red-600" : "text-green-700";
-  }, [resendMsg]);
-
-  const SignupCta = () => (
-    <div className="mt-3 text-center">
-      <button
-        type="button"
-        onClick={() => router.push("/signup")}
-        className="px-4 py-2 bg-gray-900 text-white rounded-md hover:opacity-90 transition"
-      >
-        Sign up
-      </button>
-    </div>
-  );
+  // Message shown after sign up ("?msg=verify_email_sent")
+  const [notice, setNotice] = useState("");
+  useEffect(() => {
+    const msg = new URLSearchParams(window.location.search).get("msg");
+    if (msg === "verify_email_sent") setNotice("Check your inbox to verify your email, then sign in.");
+  }, []);
 
   const handleResendVerification = async () => {
     setResendMsg("");
@@ -232,73 +218,60 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-white">
-      <div className="bg-white shadow rounded-lg p-8 max-w-md w-full">
-        <h1 className="text-3xl font-bold text-center text-gray-900 mb-6">Keymatic Login</h1>
-
-        {!showForgot ? (
+    <AuthCard
+      title={showForgot ? "Reset password" : "Sign in to Keymatic"}
+      subtitle={showForgot ? "We’ll email you a link to choose a new one." : "Manage keys, machines and guests."}
+      footer={
+        showForgot ? (
+          <button
+            type="button"
+            className="k-link"
+            onClick={() => {
+              setShowForgot(false);
+              setResetMsg("");
+            }}
+          >
+            ‹ Back to sign in
+          </button>
+        ) : (
           <>
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    setError("");
-                    setResendMsg("");
-                    setShowResendVerify(false);
-                  }}
-                  placeholder="Enter user email"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-black"
-                  required
-                />
-              </div>
+            New to Keymatic?{" "}
+            <button type="button" className="k-link" onClick={() => router.push("/signup")}>
+              Create an account
+            </button>
+          </>
+        )
+      }
+    >
+      {notice && !showForgot && <div className="k-alert-info mb-5">{notice}</div>}
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    setError("");
-                    setResendMsg("");
-                    setShowResendVerify(false);
-                  }}
-                  placeholder="Enter password"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-black"
-                  required
-                />
-              </div>
+      {!showForgot ? (
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div>
+            <label className="k-label" htmlFor="email">Email</label>
+            <input
+              id="email"
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setError("");
+                setResendMsg("");
+                setShowResendVerify(false);
+              }}
+              placeholder="name@example.com"
+              className="k-input"
+              required
+            />
+          </div>
 
+          <div>
+            <div className="flex items-center justify-between">
+              <label className="k-label" htmlFor="password">Password</label>
               <button
-                type="submit"
-                disabled={submitting}
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition disabled:opacity-60"
-              >
-                {submitting ? "Logging in..." : "Login"}
-              </button>
-
-              {error && <div className="text-red-600 text-center font-medium">{error}</div>}
-
-              {showResendVerify && (
-                <div className="text-center space-y-2">
-                  <button
-                    type="button"
-                    onClick={handleResendVerification}
-                    className="px-4 py-2 bg-gray-900 text-white rounded-md hover:opacity-90 transition"
-                  >
-                    Resend verification email
-                  </button>
-                  {resendMsg && <div className={`${resendMsgClass} font-medium`}>{resendMsg}</div>}
-                </div>
-              )}
-            </form>
-
-            <p className="mt-2 text-sm text-center">
-              <button
+                type="button"
+                className="text-[13px] k-link mb-1.5"
                 onClick={() => {
                   setShowForgot(true);
                   setResetMsg("");
@@ -307,58 +280,68 @@ export default function LoginPage() {
                   setResendMsg("");
                   setPassword("");
                 }}
-                className="text-blue-600 hover:underline bg-transparent border-0 p-0"
-                type="button"
               >
-                Forgot your password?
+                Forgot password?
               </button>
-            </p>
-
-            <div className="mt-4 text-sm text-gray-500 text-center">
-              Don&apos;t have an account? <SignupCta />
             </div>
-          </>
-        ) : (
-          <form onSubmit={handleForgot} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Enter your email address</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => {
-                  setEmail(e.target.value);
-                  setResetMsg("");
-                }}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm text-black"
-                required
-              />
+            <input
+              id="password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setError("");
+                setResendMsg("");
+                setShowResendVerify(false);
+              }}
+              placeholder="Password"
+              className="k-input"
+              required
+            />
+          </div>
+
+          {error && <div className="k-alert-error">{error}</div>}
+
+          {showResendVerify && (
+            <div className="space-y-2">
+              <button type="button" onClick={handleResendVerification} className="k-btn-secondary k-btn-block">
+                Resend verification email
+              </button>
+              {resendMsg && (
+                <div className={isErrorText(resendMsg) ? "k-alert-error" : "k-alert-success"}>{resendMsg}</div>
+              )}
             </div>
+          )}
 
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition disabled:opacity-60"
-            >
-              {submitting ? "Sending..." : "Send Password Reset Link"}
-            </button>
-
-            {resetMsg && (
-              <div className={`text-center mt-4 font-medium ${resetMsgClass}`}>{resetMsg}</div>
-            )}
-
-            <button
-              type="button"
-              onClick={() => {
-                setShowForgot(false);
+          <button type="submit" disabled={submitting} className="k-btn-primary k-btn-block k-btn-lg !mt-6">
+            {submitting ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
+      ) : (
+        <form onSubmit={handleForgot} className="space-y-4">
+          <div>
+            <label className="k-label" htmlFor="reset-email">Email</label>
+            <input
+              id="reset-email"
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
                 setResetMsg("");
               }}
-              className="text-blue-600 hover:underline bg-transparent border-0 block mx-auto mt-2"
-            >
-              Back to Login
-            </button>
-          </form>
-        )}
-      </div>
-    </div>
+              placeholder="name@example.com"
+              className="k-input"
+              required
+            />
+          </div>
+          {resetMsg && <div className={isErrorText(resetMsg) ? "k-alert-error" : "k-alert-success"}>{resetMsg}</div>}
+          <button type="submit" disabled={submitting} className="k-btn-primary k-btn-block k-btn-lg">
+            {submitting ? "Sending…" : "Send reset link"}
+          </button>
+        </form>
+      )}
+    </AuthCard>
   );
 }

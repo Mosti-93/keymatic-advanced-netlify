@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { supabase } from "@/utils/supabaseClient";
 import { useRequireRole, CheckingAccess } from "@/utils/useRequireRole";
+import AppShell from "@/components/AppShell";
 
 const toDate = (v) => (v ? new Date(String(v).replace(" ", "T")) : null);
 
@@ -22,14 +22,13 @@ function fmt(v) {
 }
 
 const BADGE = {
-  Current: "bg-green-100 text-green-700",
-  Upcoming: "bg-blue-100 text-blue-700",
-  Past: "bg-gray-100 text-gray-500",
-  Unknown: "bg-gray-100 text-gray-500",
+  Current: "k-badge-green",
+  Upcoming: "k-badge-blue",
+  Past: "k-badge-gray",
+  Unknown: "k-badge-gray",
 };
 
 export default function ClientPanel() {
-  const router = useRouter();
   const { checking, user, profile } = useRequireRole(["client"]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -81,11 +80,6 @@ export default function ClientPanel() {
     })();
   }, [checking, user]);
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    localStorage.clear();
-    router.replace("/login");
-  };
 
   if (checking) return <CheckingAccess />;
 
@@ -93,56 +87,69 @@ export default function ClientPanel() {
   const order = { Current: 0, Upcoming: 1, Past: 2, Unknown: 3 };
   const sorted = [...bookings].sort((a, b) => order[statusOf(a, now)] - order[statusOf(b, now)]);
 
+  const firstName = (profile?.name || "").split(" ")[0];
+
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-800">
-      <header className="bg-white shadow flex items-center justify-between px-6 py-4">
-        <h1 className="text-2xl font-bold">My stays</h1>
-        <button onClick={handleLogout} className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition">
-          Log out
-        </button>
-      </header>
+    <AppShell nav={[]} homeHref="/client-panel">
+      <div className="k-page !max-w-3xl">
+        <div className="k-fade-in">
+          <p className="k-eyebrow">My stays</p>
+          <h1 className="k-title mt-2">{firstName ? `Hi, ${firstName}.` : "Welcome."}</h1>
+          <p className="k-subtitle">
+            Your pickup link arrives at <span className="text-[#1d1d1f]">{user?.email}</span> before check-in.
+          </p>
+        </div>
 
-      <main className="max-w-3xl mx-auto py-8 px-4">
-        <p className="mb-6 text-gray-600">
-          Hello{profile?.name ? `, ${profile.name}` : ""}! Here are your bookings. Your key pickup link is sent to{" "}
-          <span className="font-medium">{user?.email}</span> before check-in.
-        </p>
-
-        {loading ? (
-          <p className="text-gray-500">Loading…</p>
-        ) : error ? (
-          <div className="p-4 rounded bg-red-50 text-red-700">{error}</div>
-        ) : sorted.length === 0 ? (
-          <div className="p-6 bg-white rounded-lg shadow text-gray-600">
-            No bookings found for this email yet. If you just booked, please check again later or contact your host.
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {sorted.map((b) => {
-              const status = statusOf(b, now);
-              return (
-                <div key={b.id} className="bg-white rounded-lg shadow p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="text-lg font-semibold">{b.room ? `Room ${b.room}` : "Your stay"}</div>
-                    <span className={`text-xs px-2 py-1 rounded ${BADGE[status]}`}>{status}</span>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-                    <div><span className="text-gray-500">Check-in:</span> {fmt(b.check_in)}</div>
-                    <div><span className="text-gray-500">Check-out:</span> {fmt(b.check_out)}</div>
-                    {b.machine && (
-                      <div className="sm:col-span-2">
-                        <span className="text-gray-500">Key pickup:</span>{" "}
-                        {b.machine["Machine name"] || b.machine.machine_id}
-                        {b.machine.machine_address || b.machine.location ? ` — ${b.machine.machine_address || b.machine.location}` : ""}
+        <div className="mt-10 k-fade-in-2">
+          {loading ? (
+            <div className="space-y-4">
+              {[0, 1].map((i) => <div key={i} className="h-40 rounded-[18px] bg-black/[0.04] animate-pulse" />)}
+            </div>
+          ) : error ? (
+            <div className="k-alert-error">{error}</div>
+          ) : sorted.length === 0 ? (
+            <div className="k-card text-center">
+              <div className="text-4xl">🧳</div>
+              <h2 className="mt-4 text-xl font-semibold">No bookings yet</h2>
+              <p className="mt-2 k-muted">If you just booked, check back soon or contact your host.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {sorted.map((b) => {
+                const status = statusOf(b, now);
+                return (
+                  <div key={b.id} className={`k-card ${status === "Past" ? "opacity-70" : ""}`}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <div className="text-[13px] k-muted">{b.machine ? b.machine["Machine name"] || b.machine.machine_id : "Your stay"}</div>
+                        <div className="mt-1 text-3xl font-semibold tracking-tight" style={{ letterSpacing: "-0.03em" }}>
+                          {b.room ? `Room ${b.room}` : "Booking"}
+                        </div>
+                      </div>
+                      <span className={BADGE[status]}>{status}</span>
+                    </div>
+                    <div className="mt-6 grid grid-cols-2 gap-4">
+                      <div className="rounded-2xl bg-[#f5f5f7] p-4">
+                        <div className="text-[12px] uppercase tracking-wide k-faint">Check-in</div>
+                        <div className="mt-1 font-medium">{fmt(b.check_in)}</div>
+                      </div>
+                      <div className="rounded-2xl bg-[#f5f5f7] p-4">
+                        <div className="text-[12px] uppercase tracking-wide k-faint">Check-out</div>
+                        <div className="mt-1 font-medium">{fmt(b.check_out)}</div>
+                      </div>
+                    </div>
+                    {b.machine && (b.machine.machine_address || b.machine.location) && (
+                      <div className="mt-4 text-[15px] k-muted">
+                        📍 Key pickup: {b.machine.machine_address || b.machine.location}
                       </div>
                     )}
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </main>
-    </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </AppShell>
   );
 }
