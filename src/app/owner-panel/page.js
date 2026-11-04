@@ -329,13 +329,13 @@ async function handleStartPickup(client) {
   useEffect(() => {
     const fetchOwner = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return router.push("/");
+      if (!user) return router.replace("/login");
       const { data: profile, error } = await supabase
         .from("users")
         .select("id, role, name, email")
         .eq("id", user.id)
         .single();
-      if (error || profile?.role !== "owner") return router.push("/");
+      if (error || String(profile?.role || "").trim().toLowerCase() !== "owner") return router.replace("/login");
       setOwnerId(profile.id);
       setProfile(profile);
     };

@@ -454,7 +454,7 @@ const [step, setStep] = useState("welcome");
     } else if (limit === "ON") {
       // Door reports it didn't open
       setDoorResponse({ door: doorResp, statusText: extractStatusText(statusResp) });
-      setApiError("Door cant open please check if something block the door");
+      setApiError("The door could not open. Please check that nothing is blocking it.");
     } else {
       // Unknown status text
       setDoorResponse({ door: doorResp, statusText: extractStatusText(statusResp) });
@@ -463,7 +463,7 @@ const [step, setStep] = useState("welcome");
   } catch (e) {
     // @ts-ignore
     if (e.code === "TIMEOUT") {
-      setApiError("machine are offline Please check if machine connected to power or call support");
+      setApiError("The machine is offline. Please check that it is connected to power, or contact support.");
     } else {
       setApiError(`Door status error: ${e.message}`);
     }
@@ -472,11 +472,11 @@ const [step, setStep] = useState("welcome");
 }
 
 
-      setApiError("machine are offline Please check if machine connected to power or call support");
+      setApiError("The machine is offline. Please check that it is connected to power, or contact support.");
     } catch (error) {
       // @ts-ignore
       if (error.code === "TIMEOUT" || String(error.message || "").startsWith("HTTP "))
-        setApiError("machine are offline Please check if machine connected to power or call support");
+        setApiError("The machine is offline. Please check that it is connected to power, or contact support.");
       else setApiError(`Door operation failed: ${error.message}`);
     } finally {
       setApiLoading(false);
@@ -514,7 +514,7 @@ async function handleReleaseKey() {
     console.log("[pickup] relay status respText =", respText);
 
     if (respText.includes("LIMIT") && respText.includes(":ON")) {
-      setApiError("Please take the key !!");
+      setApiError("Please take your key.");
       return;
     }
 
@@ -577,7 +577,6 @@ async function handleReleaseKey() {
 
       // 3) Continue the UI flow
       setRelayResponse(null);
-      alert("The key has been delivered successfully. Please close the door");
       setStep("closeDoor");
       return;
     }
@@ -587,7 +586,7 @@ async function handleReleaseKey() {
   } catch (error) {
     // @ts-ignore
     if (error.code === "TIMEOUT" || String(error.message || "").startsWith("HTTP ")) {
-      setApiError("Machine is offline. Please check if machine connected to power or call support");
+      setApiError("The machine is offline. Please check that it is connected to power, or contact support.");
     } else {
       setApiError(`Key release failed: ${error.message}`);
     }
