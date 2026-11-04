@@ -15,7 +15,8 @@ declare p record;
 begin
   for p in
     select tablename, policyname from pg_policies
-    where schemaname = 'public' and tablename in ('keys', 'key_slot_presence', 'machines')
+    where schemaname = 'public'
+      and tablename in ('keys', 'key_slot_presence', 'machines', 'door_events', 'access_logs', 'relay_config', 'test_table')
   loop
     execute format('drop policy %I on public.%I', p.policyname, p.tablename);
   end loop;
@@ -54,5 +55,27 @@ create policy slots_select on public.key_slot_presence
   );
 create policy slots_admin_write on public.key_slot_presence
   for all to authenticated using (public.is_admin()) with check (public.is_admin());
+
+-- Machine/device tables: admins only from the browser (the Pi and Edge
+-- Functions use the service role). Tables that do not exist are skipped.
+do $$
+declare t text;
+begin
+  foreach t in array array['door_events', 'access_logs', 'relay_config', 'test_table'] loop
+    if to_regclass('public.' || t) is not null then
+      execute format('alter table public.%I enable row level security', t);
+      execute format(
+        'create policy %I on public.%I for all to authenticated using (public.is_admin()) with check (public.is_admin())',
+        t || '_admin_all', t);
+      execute format('revoke all on public.%I from anon', t);
+    end if;
+  end loop;
+end $$;
+
+-- Views run with their owner's rights by default, which would bypass the
+-- rules above; make the slot view respect the caller's RLS.
+alter view if exists public.key_slot_presence_v set (security_invoker = true);
+
+revoke all on public.keys, public.key_slot_presence, public.machines from anon;
 
 commit;

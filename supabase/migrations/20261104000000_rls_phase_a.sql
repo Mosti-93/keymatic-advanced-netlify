@@ -68,9 +68,11 @@ create policy users_update_own_or_admin on public.users
   using (id = auth.uid() or public.is_admin())
   with check (id = auth.uid() or public.is_admin());
 
-create policy users_insert_admin on public.users
+-- Own profile (kept from the current setup) or admin. The trigger below stops
+-- anyone but an admin from creating a profile with an elevated role.
+create policy users_insert_own_or_admin on public.users
   for insert to authenticated
-  with check (public.is_admin());
+  with check (id = auth.uid() or public.is_admin());
 
 create policy users_delete_admin on public.users
   for delete to authenticated
@@ -83,8 +85,15 @@ security definer
 set search_path = public
 as $$
 begin
-  -- auth.uid() is null for the service role and database triggers: allowed.
-  if new.role is distinct from old.role and auth.uid() is not null and not public.is_admin() then
+  -- auth.uid() is null for the service role and database triggers (e.g. the
+  -- sign-up trigger handle_new_user): those are always allowed.
+  if auth.uid() is null or public.is_admin() then
+    return new;
+  end if;
+  if tg_op = 'INSERT' and coalesce(lower(trim(new.role)), 'client') <> 'client' then
+    raise exception 'Only an admin can create users with role %', new.role;
+  end if;
+  if tg_op = 'UPDATE' and new.role is distinct from old.role then
     raise exception 'Only an admin can change roles';
   end if;
   return new;
@@ -93,7 +102,7 @@ $$;
 
 drop trigger if exists users_prevent_role_self_change on public.users;
 create trigger users_prevent_role_self_change
-  before update on public.users
+  before insert or update on public.users
   for each row execute function public.prevent_role_self_change();
 
 -- ---------------------------------------------------------------------------
@@ -128,5 +137,15 @@ create policy clients_delete on public.clients
 -- means no access for anon or signed-in users; the service role still works.
 -- ---------------------------------------------------------------------------
 alter table public.pickup_requests enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Grants (defence in depth; RLS still applies on top)
+-- ---------------------------------------------------------------------------
+-- TRUNCATE ignores RLS entirely, so the browser roles must never have it.
+revoke truncate on all tables in schema public from anon, authenticated;
+
+-- The browser never needs these tables without signing in (pickups go
+-- through the server now).
+revoke all on public.users, public.clients, public.pickup_requests from anon;
 
 commit;
