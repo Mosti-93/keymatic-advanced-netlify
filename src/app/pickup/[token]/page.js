@@ -94,11 +94,8 @@ async function invalidateByUID(supabase, { token, uid, machineId, roomNo }) {
       .from("key_slot_presence")
       .update({
         UID: null,
-        removed_at: isoNow,
-        notes: noteBase,
       })
-      .eq("UID", uid)
-      .is("removed_at", null);
+      .eq("UID", uid);
 
     if (machineId) q1 = q1.eq("machine_id", String(machineId).toUpperCase());
 
@@ -111,28 +108,11 @@ async function invalidateByUID(supabase, { token, uid, machineId, roomNo }) {
         .from("key_slot_presence")
         .update({
           UID: null,
-          removed_at: isoNow,
-          notes: noteBase,
         })
         .eq("UID", uid)
-        .is("removed_at", null)
         .select("*");
       if (e2) throw e2;
       affected = upd2?.length ?? 0;
-    }
-
-    if (affected === 0) {
-      const { data: upd3, error: e3 } = await supabase
-        .from("key_slot_presence")
-        .update({
-          UID: null,
-          removed_at: isoNow,
-          notes: noteBase,
-        })
-        .eq("UID", uid)
-        .select("*");
-      if (e3) throw e3;
-      affected = upd3?.length ?? 0;
     }
 
     if (affected === 0 && typeof uid === "string") {
@@ -142,11 +122,8 @@ async function invalidateByUID(supabase, { token, uid, machineId, roomNo }) {
           .from("key_slot_presence")
           .update({
             UID: null,
-            removed_at: isoNow,
-            notes: noteBase,
           })
           .eq("UID", v)
-          .is("removed_at", null)
           .select("*");
         if (e4) throw e4;
         affected = upd4?.length ?? 0;
