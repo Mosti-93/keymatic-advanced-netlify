@@ -156,10 +156,11 @@ export default function UsersRolesControlPage() {
           roleFilter("client"),
         ]}
         columns={[
-          { key: "name", header: "Name", mobile: "title", cell: (u) => <span className="font-medium">{u.name}</span> },
-          { key: "email", header: "Email", mobile: "subtitle" },
+          { key: "name", mobile: "title", header: "Name", cell: (u) => <span className="font-medium">{u.name}</span> },
+          { key: "email", mobile: "meta", header: "Email" },
           {
             key: "role",
+            mobile: "badge",
             header: "Role",
             value: (u) => u.role || "",
             cell: (u) =>

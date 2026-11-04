@@ -293,8 +293,8 @@ export default function LinkOwnerPage() {
           columns={[
             {
               key: "key_id",
-              header: "Key",
               mobile: "title",
+              header: "Key",
               value: (k) => k.key_id || k.id,
               cell: (k) => <span className="font-medium">{k.key_id || k.id}</span>,
             },
@@ -303,9 +303,20 @@ export default function LinkOwnerPage() {
               header: "UID",
               cell: (k) => (k.UID ? <code className="text-[12px] k-muted">{k.UID}</code> : null),
             },
-            { key: "room", header: "Room", mobile: "subtitle", value: (k) => k.room_number },
+            {
+              key: "room",
+              mobile: "subtitle",
+              mobileCell: (k) => (k.room_number ? `Room ${k.room_number}` : ""),
+              header: "Room",
+              value: (k) => k.room_number,
+            },
             {
               key: "machine",
+              mobile: "meta",
+              mobileText: (k) => {
+                const m = getMachine(k.machine_id);
+                return m ? m["Machine name"] || m.machine_id : "Needs relink";
+              },
               header: "Machine",
               value: (k) => {
                 const m = getMachine(k.machine_id);
@@ -322,7 +333,7 @@ export default function LinkOwnerPage() {
                 );
               },
             },
-            { key: "owner", header: "Owner", value: (k) => getOwner(k.owner_id)?.name || "" },
+            { key: "owner", mobile: "meta", header: "Owner", value: (k) => getOwner(k.owner_id)?.name || "" },
           ]}
           rowClassName={(k) => (k.id === editingKeyId ? "!bg-[#e8f2fd]" : "")}
           rowActions={(k) => (

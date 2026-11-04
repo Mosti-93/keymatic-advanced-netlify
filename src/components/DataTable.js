@@ -14,7 +14,12 @@ import { useMemo, useState } from "react";
  *   search?: boolean (default true),
  *   export?: boolean (default true),
  *   align?: "left" | "right",
- *   mobile?: "title" | "subtitle" | "hide"   // phone card role (default: label/value row)
+ *   mobile?: "title" | "subtitle" | "badge" | "meta" | "hide"
+ *     phone list role: title = bold first line, subtitle = small text beside it,
+ *     badge = right-hand status, meta = grey second line (joined with " · "),
+ *     hide = never on phones; anything else appears when the row is expanded
+ *   mobileCell?: (row) => ReactNode   // phone title/subtitle/badge look (default: cell)
+ *   mobileText?: (row) => string      // phone meta text (default: value)
  *   width?: string                     // e.g. "120px"
  *   nowrap?: boolean                   // keep the cell on one line
  * }]
@@ -45,6 +50,7 @@ export default function DataTable({
   const [sort, setSortRaw] = useState(defaultSort || null); // { key, dir: "asc" | "desc" }
   const [pageSize, setPageSizeRaw] = useState(defaultPageSize);
   const [page, setPage] = useState(1);
+  const [expanded, setExpanded] = useState(null); // phone list: id of the open row
 
   // Any change to what is shown sends the user back to page 1.
   const resetting = (setter) => (value) => {
@@ -119,10 +125,23 @@ export default function DataTable({
 
   const titleCol = columns.find((c) => c.mobile === "title") || columns[0];
   const subtitleCol = columns.find((c) => c.mobile === "subtitle");
-  const detailCols = columns.filter((c) => c !== titleCol && c !== subtitleCol && c.mobile !== "hide");
+  const badgeCol = columns.find((c) => c.mobile === "badge");
+  const metaCols = columns.filter((c) => c.mobile === "meta");
+  const detailCols = columns.filter(
+    (c) => c !== titleCol && c !== subtitleCol && c !== badgeCol && !["meta", "hide"].includes(c.mobile)
+  );
+  const metaText = (row) =>
+    metaCols
+      .map((c) => {
+        if (c.mobileText) return c.mobileText(row) || "";
+        const v = valueOf(c, row);
+        return v instanceof Date ? formatDate(v) : toText(v);
+      })
+      .filter(Boolean)
+      .join(" · ");
 
-  const render = (col, row) => {
-    const v = col.cell ? col.cell(row) : valueOf(col, row);
+  const render = (col, row, mobile = false) => {
+    const v = mobile && col.mobileCell ? col.mobileCell(row) : col.cell ? col.cell(row) : valueOf(col, row);
     if (v === null || v === undefined || v === "") return <span className="k-faint">—</span>;
     return v instanceof Date ? formatDate(v) : v;
   };
@@ -189,21 +208,23 @@ export default function DataTable({
         {(filters || toolbar) && (
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
             {filters ? (
-              <div className="inline-flex rounded-full bg-[#f5f5f7] p-1 overflow-x-auto max-w-full" role="tablist">
-                {filters.map((f) => (
-                  <button
-                    key={f.key}
-                    role="tab"
-                    aria-selected={filter === f.key}
-                    onClick={() => setFilter(f.key)}
-                    className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-[13px] font-medium transition ${
-                      filter === f.key ? "bg-white shadow-sm text-[#1d1d1f]" : "text-[#6e6e73] hover:text-[#1d1d1f]"
-                    }`}
-                  >
-                    {f.label}
-                    <span className="ml-1.5 text-[12px] k-faint">{filterCounts[f.key]}</span>
-                  </button>
-                ))}
+              <div className="-mx-1 px-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div className="inline-flex rounded-full bg-[#f5f5f7] p-1" role="tablist">
+                  {filters.map((f) => (
+                    <button
+                      key={f.key}
+                      role="tab"
+                      aria-selected={filter === f.key}
+                      onClick={() => setFilter(f.key)}
+                      className={`whitespace-nowrap rounded-full px-3.5 py-1.5 text-[13px] font-medium transition ${
+                        filter === f.key ? "bg-white shadow-sm text-[#1d1d1f]" : "text-[#6e6e73] hover:text-[#1d1d1f]"
+                      }`}
+                    >
+                      {f.label}
+                      <span className="ml-1.5 text-[12px] k-faint">{filterCounts[f.key]}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             ) : (
               <span />
@@ -232,37 +253,63 @@ export default function DataTable({
         </div>
       ) : (
         <>
-          {/* Phones: cards */}
-          <div className="md:hidden px-4 pb-2 space-y-3">
-            {visible.map((row, i) => (
-              <div
-                key={getRowId(row, start + i)}
-                className={`rounded-2xl bg-[#f5f5f7] p-4 ${onRowClick ? "cursor-pointer" : ""} ${rowClassName?.(row) || ""}`}
-                onClick={onRowClick ? () => onRowClick(row) : undefined}
-              >
-                <div className="font-semibold">{render(titleCol, row)}</div>
-                {subtitleCol && <div className="text-[13px] k-muted">{render(subtitleCol, row)}</div>}
-                {detailCols.length > 0 && (
-                  <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2.5 text-[13px]">
-                    {detailCols.map((c) => (
-                      <div key={c.key} className="min-w-0">
-                        <dt className="k-faint">{c.header}</dt>
-                        <dd className="break-words">{render(c, row)}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                )}
-                {rowActions && (
-                  <div
-                    className="mt-3 pt-3 border-t border-black/5 flex flex-wrap gap-2"
-                    onClick={(e) => e.stopPropagation()}
+          {/* Phones: compact grouped list; tap a row to see details and actions */}
+          <ul className="md:hidden mx-4 mb-2 rounded-2xl bg-[#f5f5f7] divide-y divide-black/[0.06] overflow-hidden">
+            {visible.map((row, i) => {
+              const id = getRowId(row, start + i);
+              const open = expanded === id;
+              const hasMore = detailCols.length > 0 || !!rowActions;
+              return (
+                <li key={id} className={rowClassName?.(row) || ""}>
+                  <button
+                    type="button"
+                    className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-black/[0.04]"
+                    aria-expanded={hasMore ? open : undefined}
+                    onClick={() => (onRowClick ? onRowClick(row) : hasMore && setExpanded(open ? null : id))}
                   >
-                    {rowActions(row)}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-baseline gap-2 min-w-0">
+                        <span className="font-semibold text-[16px] truncate">{render(titleCol, row, true)}</span>
+                        {subtitleCol && (
+                          <span className="text-[13px] k-faint truncate">{render(subtitleCol, row, true)}</span>
+                        )}
+                      </div>
+                      {metaCols.length > 0 && (
+                        <div className="mt-0.5 text-[13px] k-muted truncate">{metaText(row) || "—"}</div>
+                      )}
+                    </div>
+                    {badgeCol && <div className="shrink-0">{render(badgeCol, row, true)}</div>}
+                    {(hasMore || onRowClick) && (
+                      <svg
+                        width="8"
+                        height="13"
+                        viewBox="0 0 8 13"
+                        aria-hidden="true"
+                        className={`shrink-0 transition-transform duration-200 ${open ? "rotate-90" : ""}`}
+                      >
+                        <path d="M1.5 1.5l5 5-5 5" fill="none" stroke="#c7c7cc" strokeWidth="2" strokeLinecap="round" />
+                      </svg>
+                    )}
+                  </button>
+                  {open && (
+                    <div className="px-4 pb-4 k-fade-in">
+                      {detailCols.length > 0 && (
+                        <dl className="rounded-xl bg-white divide-y divide-black/[0.06] text-[14px]">
+                          {detailCols.map((c) => (
+                            <div key={c.key} className="flex items-start justify-between gap-4 px-3.5 py-2.5">
+                              <dt className="k-muted shrink-0">{c.header}</dt>
+                              <dd className="text-right min-w-0 break-words">{render(c, row)}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      )}
+                      {rowActions && <div className="mt-3 flex flex-wrap gap-2">{rowActions(row)}</div>}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
 
           {/* Larger screens: table */}
           <div className="hidden md:block overflow-x-auto px-2 sm:px-3">

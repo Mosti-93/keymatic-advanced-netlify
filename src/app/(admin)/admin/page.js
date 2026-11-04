@@ -154,20 +154,28 @@ export default function Dashboard() {
           columns={[
             {
               key: "key",
+              mobile: "subtitle",
               header: "Key",
-              mobile: "title",
               value: (r) => r.keyLabel,
               cell: (r) => <span className="font-medium">{r.keyLabel}</span>,
             },
             {
               key: "room",
+              mobile: "title",
+              mobileCell: (r) => (r.room && r.room !== "—" ? `Room ${r.room}` : r.keyLabel),
               header: "Room",
-              mobile: "subtitle",
               value: (r) => (r.room === "—" ? "" : r.room),
               cell: (r) => r.room,
             },
             {
               key: "machine",
+              mobile: "meta",
+              mobileText: (r) =>
+                r.machine
+                  ? r.machine["Machine name"] || r.machine.machine_id
+                  : r.machineRaw
+                    ? "Needs relink"
+                    : "No machine",
               header: "Machine",
               value: (r) => (r.machine ? `${r.machine["Machine name"] || ""} ${r.machine.machine_id}` : ""),
               cell: (r) =>
@@ -184,6 +192,7 @@ export default function Dashboard() {
             },
             {
               key: "owner",
+              mobile: "meta",
               header: "Owner",
               value: (r) => r.owner?.name || "",
               cell: (r) =>
@@ -198,6 +207,11 @@ export default function Dashboard() {
             },
             {
               key: "guest",
+              mobile: "meta",
+              mobileText: (r) =>
+                r.client
+                  ? `${r.clientIsCurrent ? "Now" : "Next"}: ${`${r.client.first_name || ""} ${r.client.last_name || ""}`.trim()}`
+                  : "No booking",
               header: "Guest",
               value: (r) => (r.client ? `${r.client.first_name || ""} ${r.client.last_name || ""}`.trim() : ""),
               cell: (r) =>
@@ -219,6 +233,7 @@ export default function Dashboard() {
             },
             {
               key: "present",
+              mobile: "badge",
               header: "Status",
               value: (r) => (r.present === null ? "" : r.present ? "In machine" : "Out"),
               cell: (r) =>
