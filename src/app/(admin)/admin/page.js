@@ -100,6 +100,12 @@ function MachineCard({ m }) {
           </div>
         ))}
       </div>
+      {m.outside.length > 0 && (
+        <p className="rounded-lg bg-[var(--k-orange-soft)] px-3 py-2 text-[13px] text-[var(--k-orange)]">
+          {m.outside.map((s) => `Room ${s.room} is reported in slot ${s.n}`).join(" · ")}, but this machine has{" "}
+          {m.capacity} slots. Check the machine setup.
+        </p>
+      )}
       <div className="flex items-center justify-between border-t border-[var(--k-line)] pt-3 text-[13px] k-muted">
         <span>{m.capacity - m.used} free</span>
         <Link href="/create-machine" className="k-link">
@@ -191,7 +197,15 @@ export default function Dashboard() {
         const code = clean(m.machine_id);
         const mine = slots.filter((s) => clean(s.machine_id) === code);
         const maxSlot = mine.reduce((n, s) => Math.max(n, parseInt(s.slot_number, 10) || 0), 0);
-        const capacity = Math.max(parseInt(m.capacity, 10) || 0, maxSlot) || 10;
+        // The machine's capacity (Machines page) decides how many slots are drawn.
+        const capacity = parseInt(m.capacity, 10) || maxSlot || 10;
+        // Keys the machine reports in a slot number above its capacity.
+        const outside = mine
+          .filter((s) => s.UID && (parseInt(s.slot_number, 10) || 0) > capacity)
+          .map((s) => ({
+            n: parseInt(s.slot_number, 10),
+            room: roomByUid.get(clean(s.UID).toUpperCase()) || clean(s.UID),
+          }));
         const bySlot = new Map(mine.map((s) => [parseInt(s.slot_number, 10), s]));
         const list = Array.from({ length: capacity }, (_, i) => {
           const s = bySlot.get(i + 1);
@@ -206,6 +220,7 @@ export default function Dashboard() {
           capacity,
           used: list.filter((s) => s.uid).length,
           slots: list,
+          outside,
         };
       })
       .sort((a, b) => a.code.localeCompare(b.code));
