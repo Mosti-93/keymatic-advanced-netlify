@@ -1,36 +1,18 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { supabase } from "@/utils/supabaseClient";
-import DataTable from "@/components/DataTable";
-
-const toDate = (v) => (v ? new Date(String(v).replace(" ", "T")) : null);
-const clean = (v) => String(v ?? "").trim();
-const VIEW_KEY = "keymatic.overview.view";
-
-function fmt(v) {
-  const d = toDate(v);
-  if (!d || isNaN(d)) return "—";
-  return d.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function fmtDay(d) {
-  return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
-}
-
-function fmtTime(d) {
-  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
-}
-
-function guestName(c) {
-  return [c.first_name, c.last_name].filter(Boolean).join(" ") || c.email || "Guest";
-}
+import { useKeymaticData } from "@/utils/useKeymaticData";
+import { buildAlerts, buildKeyStatus, buildMachineCards, buildUpcoming, findMachineForKey } from "@/lib/machineView";
+import {
+  AlertsStrip,
+  KeyStatusTable,
+  MachineCard,
+  MachineLog,
+  MachinesTable,
+  RefreshNote,
+  UpcomingList,
+} from "@/components/machines/MachineParts";
+import ViewSwitch, { useSavedView } from "@/components/machines/ViewSwitch";
 
 function Stat({ label, value, total, note, tone }) {
   return (
@@ -40,255 +22,60 @@ function Stat({ label, value, total, note, tone }) {
         {value}
         {total !== undefined && <span className="text-lg font-normal k-faint"> / {total}</span>}
       </p>
-      {note && <p className={`mt-1 text-[13px] ${tone === "warn" ? "text-[var(--k-orange)]" : "k-muted"}`}>{note}</p>}
-    </div>
-  );
-}
-
-function ViewSwitch({ view, onChange }) {
-  const opts = [
-    { key: "machines", label: "Machines" },
-    { key: "table", label: "Table" },
-  ];
-  return (
-    <div role="group" aria-label="Overview view" className="inline-flex rounded-full bg-[#e8e8ed] p-1">
-      {opts.map((o) => (
-        <button
-          key={o.key}
-          type="button"
-          aria-pressed={view === o.key}
-          onClick={() => onChange(o.key)}
-          className={`rounded-full px-4 py-1.5 text-[14px] font-medium transition ${
-            view === o.key ? "bg-white shadow-sm text-[var(--k-text)]" : "k-muted"
-          }`}
+      {note && (
+        <p
+          className={`mt-1 text-[13px] ${tone === "warn" ? "text-[var(--k-orange)]" : tone === "bad" ? "text-[var(--k-red)]" : "k-muted"}`}
         >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function MachineCard({ m }) {
-  return (
-    <article className="k-card-flat !p-5 flex flex-col gap-4">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-[12px] font-medium tracking-wide k-faint">{m.code}</p>
-          <h3 className="text-[19px] font-semibold truncate">{m.name}</h3>
-          {m.place && <p className="text-[13px] k-muted truncate">{m.place}</p>}
-        </div>
-        <span className={m.used > 0 ? "k-badge-green" : "k-badge-gray"}>
-          {m.used}/{m.capacity} used
-        </span>
-      </div>
-      {(m.door || m.lastSeen) && (
-        <div className="flex flex-wrap items-center gap-2 text-[12px]">
-          {m.online !== null && (
-            <span
-              className={m.online ? "k-badge-green" : "k-badge-gray"}
-              title={m.lastSeen ? `Last seen ${m.lastSeen.toLocaleString()}` : ""}
-            >
-              {m.online ? "● Online" : "○ Offline"}
-            </span>
-          )}
-          {m.door && (
-            <span
-              className={m.door === "closed" ? "k-badge-green" : "k-badge-orange"}
-              title={m.doorAt ? `Since ${m.doorAt.toLocaleString()}` : ""}
-            >
-              {m.door === "closed" ? "Door closed" : "Door open"}
-            </span>
-          )}
-        </div>
-      )}
-      <div className="grid grid-cols-5 gap-1.5">
-        {m.slots.map((s) => (
-          <div
-            key={s.n}
-            title={
-              s.room
-                ? `Slot ${s.n}: room ${s.room}`
-                : s.unreg
-                  ? `Slot ${s.n}: unregistered key ${s.uid}`
-                  : s.uid
-                    ? `Slot ${s.n}: key ${s.uid} has no room`
-                    : `Slot ${s.n}: empty`
-            }
-            className={`h-12 rounded-lg flex flex-col items-center justify-center text-[11px] leading-tight border ${
-              s.room
-                ? "bg-[var(--k-accent)] border-[var(--k-accent)] text-white"
-                : s.uid
-                  ? "bg-[var(--k-orange-soft)] border-[var(--k-orange)] text-[var(--k-orange)]"
-                  : "bg-white border-[var(--k-line)] k-faint"
-            }`}
-          >
-            <span className="font-semibold">{s.n}</span>
-            <span className="truncate max-w-full px-1">{s.room || (s.unreg ? "Unreg." : s.uid ? "?" : "—")}</span>
-          </div>
-        ))}
-      </div>
-      {m.outside.length > 0 && (
-        <p className="rounded-lg bg-[var(--k-orange-soft)] px-3 py-2 text-[13px] text-[var(--k-orange)]">
-          {m.outside.map((s) => `Room ${s.room} is reported in slot ${s.n}`).join(" · ")}, but this machine has{" "}
-          {m.capacity} slots. Check the machine setup.
+          {note}
         </p>
       )}
-      <div className="flex items-center justify-between border-t border-[var(--k-line)] pt-3 text-[13px] k-muted">
-        <span>{m.capacity - m.used} free</span>
-        <Link href="/create-machine" className="k-link">
-          Manage
-        </Link>
-      </div>
-    </article>
+    </div>
   );
 }
 
 export default function Dashboard() {
-  const [loading, setLoading] = useState(true);
-  const [errors, setErrors] = useState([]);
-  const [keys, setKeys] = useState([]);
-  const [machines, setMachines] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [clients, setClients] = useState([]);
-  const [slots, setSlots] = useState([]);
-  const [view, setView] = useState("machines");
+  const { keys, machines, users, clients, slots, events, errors, loading, updatedAt, reload } = useKeymaticData();
+  const [view, changeView] = useSavedView("keymatic.overview.view");
+  // "now" moves with each auto-refresh.
+  const [openedAt] = useState(() => new Date());
+  const now = updatedAt || openedAt;
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const saved = window.localStorage.getItem(VIEW_KEY);
-        if (saved === "machines" || saved === "table") setView(saved);
-      } catch {
-        /* storage unavailable: keep the default view */
-      }
-      setLoading(true);
-      const results = await Promise.all([
-        supabase.from("keys").select("*"),
-        supabase.from("machines").select("*"),
-        supabase.from("users").select("id, name, email, role"),
-        supabase.from("clients").select("id, first_name, last_name, email, key_id, check_in, check_out"),
-        supabase.from("key_slot_presence").select("machine_id, slot_number, UID, NON_REG_UID"),
-      ]);
-      const names = ["keys", "machines", "users", "clients", "key slots"];
-      setErrors(results.map((r, i) => (r.error ? `${names[i]}: ${r.error.message}` : null)).filter(Boolean));
-      setKeys(results[0].data || []);
-      setMachines(results[1].data || []);
-      setUsers(results[2].data || []);
-      setClients(results[3].data || []);
-      setSlots(results[4].data || []);
-      setLoading(false);
-    })();
-  }, []);
-
-  const changeView = (v) => {
-    setView(v);
-    try {
-      window.localStorage.setItem(VIEW_KEY, v);
-    } catch {
-      /* storage unavailable: the choice lasts for this visit only */
+  const cards = useMemo(() => buildMachineCards({ machines, slots, keys, now }), [machines, slots, keys, now]);
+  const keyStatus = useMemo(
+    () => buildKeyStatus({ keys, slots, clients, machines, now }),
+    [keys, slots, clients, machines, now]
+  );
+  const upcoming = useMemo(() => buildUpcoming({ keyStatus, keys, clients, now }), [keyStatus, keys, clients, now]);
+  const relink = useMemo(
+    () => keys.filter((k) => k.machine_id && !findMachineForKey(k, machines)).length,
+    [keys, machines]
+  );
+  const alerts = useMemo(() => {
+    const list = buildAlerts({ cards, keyStatus });
+    if (relink) {
+      list.push({
+        tone: "orange",
+        text: `${relink} ${relink === 1 ? "key is" : "keys are"} linked to a machine that no longer exists.`,
+        href: "/link-owner",
+      });
     }
-  };
+    return list;
+  }, [cards, keyStatus, relink]);
 
-  const rows = useMemo(() => {
-    const now = new Date();
-    // keys.machine_id normally holds the machine code (e.g. "A12"); older rows may hold machines.id.
-    const findMachine = (mid) =>
-      machines.find((m) => clean(m.machine_id) === clean(mid)) || machines.find((m) => String(m.id) === String(mid));
-    const inMachine = new Set(slots.filter((s) => s.UID).map((s) => clean(s.UID).toUpperCase()));
-
-    return keys.map((k) => {
-      const keyClients = clients
-        .filter((c) => c.key_id && c.key_id === k.uuid)
-        .map((c) => ({ ...c, _in: toDate(c.check_in), _out: toDate(c.check_out) }));
-      const current = keyClients.find((c) => c._in && c._out && c._in <= now && now <= c._out);
-      const next = keyClients.filter((c) => c._in && c._in > now).sort((a, b) => a._in - b._in)[0];
-      return {
-        id: k.id,
-        keyLabel: k.key_id || k.UID || k.uuid || k.id,
-        room: k.room_number || "—",
-        machine: findMachine(k.machine_id),
-        machineRaw: k.machine_id,
-        owner: users.find((u) => u.id === k.owner_id),
-        client: current || next,
-        clientIsCurrent: Boolean(current),
-        present: k.UID ? inMachine.has(clean(k.UID).toUpperCase()) : null,
-      };
-    });
-  }, [keys, machines, users, clients, slots]);
-
-  // One card per machine, with each slot showing the room of the key inside it.
-  const machineCards = useMemo(() => {
-    const roomByUid = new Map(keys.filter((k) => k.UID).map((k) => [clean(k.UID).toUpperCase(), k.room_number || ""]));
-    return machines
-      .map((m) => {
-        const code = clean(m.machine_id);
-        const mine = slots.filter((s) => clean(s.machine_id) === code);
-        const maxSlot = mine.reduce((n, s) => Math.max(n, parseInt(s.slot_number, 10) || 0), 0);
-        // The machine's capacity (Machines page) decides how many slots are drawn.
-        const capacity = parseInt(m.capacity, 10) || maxSlot || 10;
-        // Keys the machine reports in a slot number above its capacity.
-        const outside = mine
-          .filter((s) => s.UID && (parseInt(s.slot_number, 10) || 0) > capacity)
-          .map((s) => ({
-            n: parseInt(s.slot_number, 10),
-            room: roomByUid.get(clean(s.UID).toUpperCase()) || clean(s.UID),
-          }));
-        const bySlot = new Map(mine.map((s) => [parseInt(s.slot_number, 10), s]));
-        const list = Array.from({ length: capacity }, (_, i) => {
-          const s = bySlot.get(i + 1);
-          const uid = s?.UID ? clean(s.UID).toUpperCase() : "";
-          // A key the machine does not know (not in its whitelist) is reported in NON_REG_UID.
-          const unreg = !uid && s?.NON_REG_UID ? clean(s.NON_REG_UID).toUpperCase() : "";
-          return { n: i + 1, uid: uid || unreg, unreg: Boolean(unreg), room: uid ? roomByUid.get(uid) || "" : "" };
-        });
-        // Door / heartbeat written by the machine (keywatcher 108+).
-        const lastSeen = toDate(m.last_seen_at);
-        const door = String(m.door_status || "").toLowerCase();
-        return {
-          id: m.id,
-          code,
-          door: door === "open" || door === "closed" ? door : "",
-          doorAt: toDate(m.door_updated_at),
-          lastSeen,
-          // The machine reports every minute; 3 minutes of silence = offline.
-          online: lastSeen ? new Date() - lastSeen < 3 * 60 * 1000 : null,
-          name: m["Machine name"] || code,
-          place: m.machine_address || m.location || "",
-          capacity,
-          used: list.filter((s) => s.uid).length,
-          slots: list,
-          outside,
-        };
-      })
-      .sort((a, b) => a.code.localeCompare(b.code));
-  }, [machines, slots, keys]);
-
-  // Stays that overlap the next 7 days, soonest first.
-  const week = useMemo(() => {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    const end = new Date(start);
-    end.setDate(end.getDate() + 7);
-    const roomByKey = new Map(keys.map((k) => [k.uuid, k.room_number]));
-    return clients
-      .map((c) => ({ ...c, _in: toDate(c.check_in), _out: toDate(c.check_out) }))
-      .filter((c) => c._in && c._out && c._in < end && c._out >= start)
-      .sort((a, b) => a._in - b._in)
-      .map((c) => ({ ...c, room: roomByKey.get(c.key_id) || "—" }));
-  }, [clients, keys]);
-
-  const now = new Date();
   const today = now.toDateString();
+  const count = (state) => keyStatus.filter((r) => r.state === state).length;
   const stats = {
-    keysIn: rows.filter((r) => r.present === true).length,
-    keys: keys.length,
-    staying: clients.filter((c) => toDate(c.check_in) <= now && now <= toDate(c.check_out)).length,
-    arriving: clients.filter((c) => toDate(c.check_in)?.toDateString() === today).length,
-    leaving: clients.filter((c) => toDate(c.check_out)?.toDateString() === today).length,
-    relink: rows.filter((r) => !r.machine && !!r.machineRaw).length,
-    free: machineCards.reduce((n, m) => n + (m.capacity - m.used), 0),
+    online: cards.filter((m) => m.online).length,
+    offline: cards.filter((m) => m.online === false).length,
+    keysIn: count("in") + count("waiting"),
+    withGuest: count("guest"),
+    overdue: count("overdue"),
+    pickups: upcoming.filter((e) => e.type === "pickup" && e.at.toDateString() === today).length,
+    returns: upcoming.filter((e) => e.type === "return" && e.at.toDateString() === today).length,
+    free: cards.reduce((n, m) => n + m.freeSlots, 0),
+    canLink: cards.reduce((n, m) => n + m.freeToLink, 0),
   };
+  const dash = (v) => (loading ? "…" : v);
 
   return (
     <div className="k-page">
@@ -300,6 +87,7 @@ export default function Dashboard() {
           <h1 className="text-3xl font-semibold tracking-tight" style={{ letterSpacing: "-0.02em" }}>
             Overview
           </h1>
+          <RefreshNote updatedAt={updatedAt} onRefresh={reload} />
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <ViewSwitch view={view} onChange={changeView} />
@@ -320,193 +108,62 @@ export default function Dashboard() {
         </div>
       )}
 
-      {stats.relink > 0 && (
-        <div className="mt-6 flex items-center gap-3 rounded-xl border border-[var(--k-orange)] bg-[var(--k-orange-soft)] px-4 py-3 text-[14px] text-[var(--k-orange)]">
-          <span className="flex-1">
-            {stats.relink} {stats.relink === 1 ? "key is" : "keys are"} linked to a machine that no longer exists.
-          </span>
-          <Link href="/link-owner" className="font-medium">
-            Fix
-          </Link>
-        </div>
-      )}
+      {!loading && <AlertsStrip alerts={alerts} />}
 
       <section aria-label="Key numbers" className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4 k-fade-in-2">
-        <Stat label="Keys in machines" value={loading ? "…" : stats.keysIn} total={loading ? undefined : stats.keys} />
-        <Stat label="Guests staying" value={loading ? "…" : stats.staying} />
         <Stat
-          label="Today"
-          value={loading ? "…" : stats.arriving + stats.leaving}
-          note={loading ? null : `${stats.arriving} arriving · ${stats.leaving} leaving`}
+          label="Machines online"
+          value={dash(stats.online)}
+          total={loading ? undefined : cards.length}
+          note={loading ? null : stats.offline ? `${stats.offline} offline` : "All reporting"}
+          tone={stats.offline ? "bad" : undefined}
         />
         <Stat
-          label={view === "machines" ? "Free slots" : "Needs relink"}
-          value={loading ? "…" : view === "machines" ? stats.free : stats.relink}
-          note={view === "machines" || loading ? null : stats.relink ? "Check the Link Owner page" : "All keys linked"}
-          tone={stats.relink ? "warn" : undefined}
+          label="Keys in machines"
+          value={dash(stats.keysIn)}
+          total={loading ? undefined : keys.length}
+          note={loading ? null : `${stats.withGuest} with guests`}
+        />
+        <Stat
+          label="Today"
+          value={dash(stats.pickups + stats.returns)}
+          note={loading ? null : `${stats.pickups} pickups · ${stats.returns} returns`}
+        />
+        <Stat
+          label="Not returned"
+          value={dash(stats.overdue)}
+          note={loading ? null : `${stats.free} empty slots · ${stats.canLink} can link`}
+          tone={stats.overdue ? "bad" : undefined}
         />
       </section>
 
-      {view === "machines" ? (
-        <>
-          <section aria-label="Machines" className="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+      <div className="mt-6">
+        {view === "machines" ? (
+          <section aria-label="Machines" className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {loading
-              ? [0, 1, 2].map((i) => <div key={i} className="k-card-flat h-64 animate-pulse" />)
-              : machineCards.map((m) => <MachineCard key={m.id} m={m} />)}
-            {!loading && machineCards.length === 0 && <p className="k-muted">No machines yet.</p>}
+              ? [0, 1, 2].map((i) => <div key={i} className="k-card-flat h-72 animate-pulse" />)
+              : cards.map((m) => <MachineCard key={m.id} m={m} />)}
+            {!loading && cards.length === 0 && <p className="k-muted">No machines yet.</p>}
           </section>
+        ) : (
+          <MachinesTable cards={cards} loading={loading} />
+        )}
+      </div>
 
-          <section className="mt-6 k-card-flat">
-            <div className="flex items-center justify-between">
-              <h2 className="text-[19px] font-semibold">Next 7 days</h2>
-              <Link href="/add-client" className="k-link text-[14px]">
-                All bookings
-              </Link>
-            </div>
-            {!loading && week.length === 0 && <p className="mt-3 text-[14px] k-muted">No stays in the next 7 days.</p>}
-            <ul className="mt-2">
-              {week.map((c) => (
-                <li
-                  key={c.id}
-                  className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-[var(--k-line)] py-3"
-                >
-                  <span className="min-w-0 flex-1 font-medium">{guestName(c)}</span>
-                  <span className="text-[14px] k-muted">Room {c.room}</span>
-                  <span className="text-[14px] k-muted">
-                    {fmtDay(c._in)} {fmtTime(c._in)} → {fmtDay(c._out)} {fmtTime(c._out)}
-                  </span>
-                  {c._in <= now && now <= c._out ? (
-                    <span className="k-badge-green">Staying</span>
-                  ) : (
-                    <span className="k-badge-blue">Upcoming</span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </section>
-        </>
-      ) : (
-        <div className="mt-6">
-          <DataTable
-            title="Keys"
-            subtitle="Every key, where it is, and who it’s for."
-            rows={rows}
-            loading={loading}
-            exportName="keys-overview"
-            searchPlaceholder="Search key, room, machine, owner, guest"
-            defaultSort={{ key: "room", dir: "asc" }}
-            emptyText="No keys yet."
-            filters={[
-              { key: "all", label: "All", test: () => true },
-              { key: "in", label: "In machine", test: (r) => r.present === true },
-              { key: "out", label: "Out", test: (r) => r.present === false },
-              { key: "now", label: "Guest staying", test: (r) => r.clientIsCurrent },
-              { key: "relink", label: "Needs relink", test: (r) => !r.machine && !!r.machineRaw },
-            ]}
-            columns={[
-              {
-                key: "key",
-                mobile: "subtitle",
-                header: "Key",
-                value: (r) => r.keyLabel,
-                cell: (r) => <span className="font-medium">{r.keyLabel}</span>,
-              },
-              {
-                key: "room",
-                mobile: "title",
-                mobileCell: (r) => (r.room && r.room !== "—" ? `Room ${r.room}` : r.keyLabel),
-                header: "Room",
-                value: (r) => (r.room === "—" ? "" : r.room),
-                cell: (r) => r.room,
-              },
-              {
-                key: "machine",
-                mobile: "meta",
-                mobileText: (r) =>
-                  r.machine
-                    ? r.machine["Machine name"] || r.machine.machine_id
-                    : r.machineRaw
-                      ? "Needs relink"
-                      : "No machine",
-                header: "Machine",
-                value: (r) => (r.machine ? `${r.machine["Machine name"] || ""} ${r.machine.machine_id}` : ""),
-                cell: (r) =>
-                  r.machine ? (
-                    <>
-                      <div>{r.machine["Machine name"] || r.machine.machine_id}</div>
-                      <div className="text-[12px] k-faint">{r.machine.machine_id}</div>
-                    </>
-                  ) : r.machineRaw ? (
-                    <span className="k-badge-orange">Unknown · relink</span>
-                  ) : (
-                    <span className="k-faint">Not linked</span>
-                  ),
-              },
-              {
-                key: "owner",
-                mobile: "meta",
-                header: "Owner",
-                value: (r) => r.owner?.name || "",
-                cell: (r) =>
-                  r.owner ? (
-                    <>
-                      <div>{r.owner.name || "—"}</div>
-                      <div className="text-[12px] k-faint">{r.owner.email}</div>
-                    </>
-                  ) : (
-                    <span className="k-faint">No owner</span>
-                  ),
-              },
-              {
-                key: "guest",
-                mobile: "meta",
-                mobileText: (r) =>
-                  r.client
-                    ? `${r.clientIsCurrent ? "Now" : "Next"}: ${`${r.client.first_name || ""} ${r.client.last_name || ""}`.trim()}`
-                    : "No booking",
-                header: "Guest",
-                value: (r) => (r.client ? `${r.client.first_name || ""} ${r.client.last_name || ""}`.trim() : ""),
-                cell: (r) =>
-                  r.client ? (
-                    <>
-                      <div className="flex items-center gap-2">
-                        {`${r.client.first_name || ""} ${r.client.last_name || ""}`.trim() || r.client.email}
-                        <span className={r.clientIsCurrent ? "k-badge-green" : "k-badge-blue"}>
-                          {r.clientIsCurrent ? "Now" : "Next"}
-                        </span>
-                      </div>
-                      <div className="text-[12px] k-faint">
-                        {fmt(r.client.check_in)} → {fmt(r.client.check_out)}
-                      </div>
-                    </>
-                  ) : (
-                    <span className="k-faint">No booking</span>
-                  ),
-              },
-              {
-                key: "present",
-                mobile: "badge",
-                header: "Status",
-                value: (r) => (r.present === null ? "" : r.present ? "In machine" : "Out"),
-                cell: (r) =>
-                  r.present === null ? null : r.present ? (
-                    <span className="k-badge-green">● In machine</span>
-                  ) : (
-                    <span className="k-badge-gray">Out</span>
-                  ),
-              },
-            ]}
-            rowActions={(r) => (
-              <Link
-                href={!r.machine && r.machineRaw ? "/link-owner" : `/create-key?edit=${encodeURIComponent(r.id)}`}
-                className="k-link text-[14px] px-2"
-              >
-                Edit
-              </Link>
-            )}
-          />
-        </div>
-      )}
+      <div id="keys" className="mt-6 scroll-mt-20">
+        <KeyStatusTable
+          rows={keyStatus}
+          loading={loading}
+          users={users}
+          title="Key status"
+          subtitle="Where every key is and who has it. Not returned first."
+        />
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-2 items-start">
+        <UpcomingList items={upcoming} loading={loading} />
+        <MachineLog events={events} loading={loading} />
+      </div>
     </div>
   );
 }
