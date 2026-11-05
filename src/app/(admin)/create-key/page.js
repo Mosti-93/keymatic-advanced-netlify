@@ -32,6 +32,9 @@ export default function CreateKeyPage() {
   // -------- EDIT MODE --------
   const [editMode, setEditMode] = useState(false);
   const [editingKeyId, setEditingKeyId] = useState(null);
+  // Opened from a machine page ("Add key to this machine" / "Register this key"):
+  // the machine code to go back to after saving.
+  const [returnTo, setReturnTo] = useState("");
 
   const [loaded, setLoaded] = useState(false);
   const [slots, setSlots] = useState([]); // key_slot_presence: which key is in which machine slot
@@ -63,7 +66,8 @@ export default function CreateKeyPage() {
 
     // Opened from the dashboard's "Edit" link (/create-key?edit=<key id>):
     // put that key straight into the edit form.
-    const editId = new URLSearchParams(window.location.search).get("edit");
+    const params = new URLSearchParams(window.location.search);
+    const editId = params.get("edit");
     if (editId && !keysRes.error) {
       const target = (keysRes.data || []).find((k) => String(k.id) === editId);
       if (target) {
@@ -72,6 +76,31 @@ export default function CreateKeyPage() {
       } else {
         setMessage("That key was not found. It may have been deleted.");
       }
+    }
+
+    // /create-key?machine=A08[&uid=1D52D2EC]: new key for that machine, UID filled in.
+    const preMachine = String(params.get("machine") || "").trim();
+    const preUid = String(params.get("uid") || "")
+      .replace(/[\s:.-]/g, "")
+      .toUpperCase();
+    if (!editId && (preMachine || preUid)) {
+      const match = (machinesRes.data || []).find(
+        (m) =>
+          String(m.machine_id ?? "")
+            .trim()
+            .toUpperCase() === preMachine.toUpperCase()
+      );
+      setForm((prev) => ({
+        ...prev,
+        machine_id: match ? String(match.machine_id) : prev.machine_id,
+        UID: preUid || prev.UID,
+      }));
+      if (match) setReturnTo(String(match.machine_id).trim());
+      setMessage(
+        preUid
+          ? `Registering key ${preUid}${match ? ` for machine ${String(match.machine_id).trim()}` : ""}. Add a Key ID and room, then save.`
+          : `Adding a key to machine ${match ? String(match.machine_id).trim() : preMachine}.`
+      );
     }
   };
 
@@ -204,6 +233,11 @@ export default function CreateKeyPage() {
       setOwnerSearch("");
       setEditMode(false);
       setEditingKeyId(null);
+      if (returnTo && !editMode) {
+        // Back to the machine page it came from.
+        window.location.assign(`/machines/${encodeURIComponent(returnTo)}?saved=1`);
+        return;
+      }
       fetchAll();
     }
 
@@ -274,7 +308,7 @@ export default function CreateKeyPage() {
 
       <Notice>{message}</Notice>
       <div className="space-y-6">
-        <FormPanel title={editMode ? "Edit key" : "Add key"} addLabel="Add key" forceOpen={editMode}>
+        <FormPanel title={editMode ? "Edit key" : "Add key"} addLabel="Add key" forceOpen={editMode || !!returnTo}>
           <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 items-start">
             <div className="grid grid-cols-2 gap-3">
               {field("Key ID", "key_id", { placeholder: "e.g. Key 204", required: true })}
