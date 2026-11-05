@@ -244,8 +244,15 @@ export default function Dashboard() {
                 ),
             },
           ]}
-          rowActions={() => (
-            <Link href="/link-owner" className="k-link text-[14px] px-2">
+          rowActions={(r) => (
+            <Link
+              href={
+                !r.machine && r.machineRaw
+                  ? "/link-owner"
+                  : `/create-key?edit=${encodeURIComponent(r.id)}`
+              }
+              className="k-link text-[14px] px-2"
+            >
               Edit
             </Link>
           )}
