@@ -158,7 +158,12 @@ export default function CreateKeyPage() {
     setLoading(true);
     setMessage("");
 
-    const { key_id, UID } = form;
+    const { key_id } = form;
+    // Store the UID the way the machine reads it: no colons/spaces/dashes, upper-case
+    // ("04:5b:3a" -> "045B3A"). Otherwise the database rejects it when the key is inserted.
+    const UID = String(form.UID || "")
+      .replace(/[\s:.-]/g, "")
+      .toUpperCase();
     if (!key_id || !UID) {
       setMessage("key_id and UID are required.");
       setLoading(false);

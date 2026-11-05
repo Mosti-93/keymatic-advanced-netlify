@@ -82,6 +82,26 @@ function MachineCard({ m }) {
           {m.used}/{m.capacity} used
         </span>
       </div>
+      {(m.door || m.lastSeen) && (
+        <div className="flex flex-wrap items-center gap-2 text-[12px]">
+          {m.online !== null && (
+            <span
+              className={m.online ? "k-badge-green" : "k-badge-gray"}
+              title={m.lastSeen ? `Last seen ${m.lastSeen.toLocaleString()}` : ""}
+            >
+              {m.online ? "● Online" : "○ Offline"}
+            </span>
+          )}
+          {m.door && (
+            <span
+              className={m.door === "closed" ? "k-badge-green" : "k-badge-orange"}
+              title={m.doorAt ? `Since ${m.doorAt.toLocaleString()}` : ""}
+            >
+              {m.door === "closed" ? "Door closed" : "Door open"}
+            </span>
+          )}
+        </div>
+      )}
       <div className="grid grid-cols-5 gap-1.5">
         {m.slots.map((s) => (
           <div
@@ -222,9 +242,17 @@ export default function Dashboard() {
           const unreg = !uid && s?.NON_REG_UID ? clean(s.NON_REG_UID).toUpperCase() : "";
           return { n: i + 1, uid: uid || unreg, unreg: Boolean(unreg), room: uid ? roomByUid.get(uid) || "" : "" };
         });
+        // Door / heartbeat written by the machine (keywatcher 108+).
+        const lastSeen = toDate(m.last_seen_at);
+        const door = String(m.door_status || "").toLowerCase();
         return {
           id: m.id,
           code,
+          door: door === "open" || door === "closed" ? door : "",
+          doorAt: toDate(m.door_updated_at),
+          lastSeen,
+          // The machine reports every minute; 3 minutes of silence = offline.
+          online: lastSeen ? Date.now() - lastSeen.getTime() < 3 * 60 * 1000 : null,
           name: m["Machine name"] || code,
           place: m.machine_address || m.location || "",
           capacity,
