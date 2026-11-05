@@ -44,6 +44,7 @@ export default function Page() {
   const [apiLoading, setApiLoading] = useState(false);
   const [apiError, setApiError] = useState(null);
   const [keyReleased, setKeyReleased] = useState(false);
+  const [apiDetail, setApiDetail] = useState("");
 
   const pin0 = useRef(null);
   const pin1 = useRef(null);
@@ -204,6 +205,8 @@ export default function Page() {
   /** Ask the server to run one machine step. Returns the result word. */
   async function runAction(action) {
     const { status, body } = await postLink(linkToken, "action", { action });
+    if (body.reason) console.warn("[pickup]", action, body.reason);
+    setApiDetail(body.reason ? String(body.reason).slice(0, 60) : "");
     if (status === 401) {
       // The check expired (more than a few minutes passed). Ask again.
       setStep("confirm");
@@ -489,6 +492,7 @@ export default function Page() {
             {apiLoading ? "Opening..." : "Open Machine Door"}
           </button>
           {apiError && <p className="text-red-300 mt-2">{apiError}</p>}
+          {apiError && apiDetail && <p className="text-white/50 text-xs mt-1">Code: {apiDetail}</p>}
         </div>
       )}
 
@@ -506,6 +510,7 @@ export default function Page() {
                 : "🔑 Release Key"}
           </button>
           {apiError && <p className="text-red-300 mt-2">{apiError}</p>}
+          {apiError && apiDetail && <p className="text-white/50 text-xs mt-1">Code: {apiDetail}</p>}
         </div>
       )}
 

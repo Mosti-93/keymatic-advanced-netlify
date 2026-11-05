@@ -144,8 +144,18 @@ async function callMachine(url, timeoutMs) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const r = await fetch(url, { signal: controller.signal, cache: "no-store" });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const r = await fetch(url, {
+      signal: controller.signal,
+      cache: "no-store",
+      headers: {
+        "User-Agent": "KeyMatic-Server/1.0 (+https://keymatic.myotp.site)",
+        Accept: "application/json, text/plain, */*",
+      },
+    });
+    if (!r.ok) {
+      const body = (await r.text().catch(() => "")).slice(0, 200).replace(/\s+/g, " ");
+      throw new Error(`HTTP ${r.status} ${body}`);
+    }
     const text = await r.text();
     try {
       return JSON.parse(text);
@@ -249,7 +259,11 @@ export async function runPickupAction(sb, token, action, now = new Date()) {
   try {
     if (action === "open") {
       const door = await callMachine(row.door_on_req, T.door);
-      if (!isRelayOnSuccess(door)) return { status: 200, body: { result: "offline" } };
+      if (!isRelayOnSuccess(door)) {
+        const reply = extractStatusText(door).slice(0, 200);
+        console.warn("[pickup] door reply not OK:", reply);
+        return { status: 200, body: { result: "offline", reason: `unexpected reply: ${reply}` } };
+      }
       await new Promise((r) => setTimeout(r, 200));
       const limit = parseLimitSwitch(await callMachine(row.door_status_req, T.status));
       if (limit === "ON") return { status: 200, body: { result: "blocked" } };
@@ -293,8 +307,10 @@ export async function runPickupAction(sb, token, action, now = new Date()) {
   } catch (e) {
     // @ts-ignore
     if (e?.code === "TIMEOUT" || String(e?.message || "").startsWith("HTTP ")) {
-      return { status: 200, body: { result: "offline" } };
+      console.warn("[pickup] machine unreachable:", action, e?.message);
+      return { status: 200, body: { result: "offline", reason: String(e?.message || "timeout").slice(0, 200) } };
     }
+    console.warn("[pickup] machine call error:", action, e?.message);
     console.error("[pickup] action failed:", action, e);
     return { status: 500, body: { result: "error" } };
   }
