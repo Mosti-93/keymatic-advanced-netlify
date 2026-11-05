@@ -34,13 +34,19 @@ export default function CreateKeyPage() {
   const [editingKeyId, setEditingKeyId] = useState(null);
 
   const [loaded, setLoaded] = useState(false);
+  const [slots, setSlots] = useState([]); // key_slot_presence: which key is in which machine slot
+  const [clients, setClients] = useState([]); // bookings, to show who has a key out
 
   const fetchAll = async () => {
-    const [keysRes, machinesRes, ownersRes] = await Promise.all([
+    const [keysRes, machinesRes, ownersRes, slotsRes, clientsRes] = await Promise.all([
       supabase.from("keys").select("*"),
       supabase.from("machines").select('machine_id, "Machine name"'),
       supabase.from("users").select("id, name, email, phone").eq("role", "owner"),
+      supabase.from("key_slot_presence").select("machine_id, slot_number, UID"),
+      supabase.from("clients").select("id, first_name, last_name, email, key_id, check_in, check_out"),
     ]);
+    if (!slotsRes.error) setSlots(slotsRes.data || []);
+    if (!clientsRes.error) setClients(clientsRes.data || []);
 
     if (!keysRes.error) setKeys(keysRes.data || []);
 
@@ -71,6 +77,39 @@ export default function CreateKeyPage() {
 
   // -------- HELPERS --------
   const machinesById = useMemo(() => new Map(machines.map((m) => [String(m.machine_id), m])), [machines]);
+
+  // Where each key is right now: in a machine slot, out with a staying guest, or out.
+  const statusByKeyId = useMemo(() => {
+    const norm = (v) =>
+      String(v ?? "")
+        .trim()
+        .toUpperCase();
+    const toDate = (v) => (v ? new Date(String(v).replace(" ", "T")) : null);
+    const slotByUid = new Map(slots.filter((s) => s.UID).map((s) => [norm(s.UID), s]));
+    const now = new Date();
+    const map = new Map();
+    for (const k of keys) {
+      const slot = k.UID ? slotByUid.get(norm(k.UID)) : null;
+      const guest = clients.find((c) => {
+        const a = toDate(c.check_in);
+        const b = toDate(c.check_out);
+        return c.key_id && c.key_id === k.uuid && a && b && a <= now && now <= b;
+      });
+      const guestName = guest ? [guest.first_name, guest.last_name].filter(Boolean).join(" ") || guest.email : "";
+      if (slot) {
+        map.set(k.id, {
+          kind: "in",
+          label: "In machine",
+          detail: `${String(slot.machine_id ?? "").trim()} · slot ${slot.slot_number}`,
+        });
+      } else if (guest) {
+        map.set(k.id, { kind: "guest", label: "With guest", detail: guestName });
+      } else {
+        map.set(k.id, { kind: "out", label: "Out", detail: k.UID ? "Not in any machine" : "No UID" });
+      }
+    }
+    return map;
+  }, [keys, slots, clients]);
   const ownersById = useMemo(() => new Map(owners.map((o) => [o.id, o])), [owners]);
 
   const getMachine = (machine_id) => {
@@ -313,6 +352,9 @@ export default function CreateKeyPage() {
           emptyText="No keys yet. Add your first one."
           filters={[
             { key: "all", label: "All", test: () => true },
+            { key: "in", label: "In machine", test: (k) => statusByKeyId.get(k.id)?.kind === "in" },
+            { key: "guest", label: "With guest", test: (k) => statusByKeyId.get(k.id)?.kind === "guest" },
+            { key: "out", label: "Out", test: (k) => statusByKeyId.get(k.id)?.kind === "out" },
             { key: "unassigned", label: "No owner", test: (k) => !k.owner_id },
             { key: "nomachine", label: "No machine", test: (k) => !k.machine_id },
             { key: "relink", label: "Unknown machine", test: (k) => !!k.machine_id && !getMachine(k.machine_id) },
@@ -391,6 +433,24 @@ export default function CreateKeyPage() {
                   </>
                 ) : (
                   <span className="k-faint">None</span>
+                );
+              },
+            },
+            {
+              key: "status",
+              mobile: "badge",
+              header: "Status",
+              value: (k) => statusByKeyId.get(k.id)?.label || "",
+              cell: (k) => {
+                const st = statusByKeyId.get(k.id);
+                if (!st) return null;
+                const badge =
+                  st.kind === "in" ? "k-badge-green" : st.kind === "guest" ? "k-badge-blue" : "k-badge-gray";
+                return (
+                  <>
+                    <span className={badge}>{st.label}</span>
+                    <div className="mt-1 text-[12px] k-faint">{st.detail}</div>
+                  </>
                 );
               },
             },
