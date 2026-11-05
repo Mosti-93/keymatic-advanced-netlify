@@ -1,13 +1,21 @@
 import crypto from "crypto";
 import { requireRole } from "@/utils/requireRole";
 
+// Known Pi addresses (Cloudflare Tunnel) per machine. An env var
+// MACHINE_<ID>_URL (e.g. MACHINE_A12_URL) overrides the default.
+// Machine A01 runs on the Pi "piA08", reachable at api-a08.myotp.site.
+const DEFAULT_ENDPOINTS = {
+  A01: "https://api-a08.myotp.site",
+};
+
 // Resolve which Pi URL we should talk to for a given machine ID
 function getMachineEndpoint(machineId) {
-  if (machineId === "A12") return process.env.MACHINE_A12_URL;
-  if (machineId === "A01") return process.env.MACHINE_A01_URL;
-  // Add more machines here later if needed:
-  // if (machineId === "A02") return process.env.MACHINE_A02_URL;
-  return undefined;
+  const id = String(machineId || "")
+    .trim()
+    .toUpperCase();
+  if (!/^[A-Z0-9_]+$/.test(id)) return undefined;
+  const fromEnv = String(process.env[`MACHINE_${id}_URL`] || "").trim();
+  return (fromEnv || DEFAULT_ENDPOINTS[id] || "").replace(/\/+$/, "") || undefined;
 }
 
 // Make a timestamp string like "2025-10-29T18:05:43"
