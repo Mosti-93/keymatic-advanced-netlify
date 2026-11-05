@@ -100,7 +100,13 @@ export async function verifyPickup(sb, token, answers, now = new Date()) {
     const minutes = Math.ceil((new Date(row.locked_until) - now) / 60000);
     return {
       status: 423,
-      body: { ok: false, locked: true, minutes, error: `Too many wrong tries. Try again in ${minutes} min.` },
+      body: {
+        ok: false,
+        locked: true,
+        code: "locked",
+        minutes,
+        error: `Too many wrong tries. Try again in ${minutes} min.`,
+      },
     };
   }
 
@@ -108,7 +114,9 @@ export async function verifyPickup(sb, token, answers, now = new Date()) {
   const result = checkAnswers(answers || {}, booking);
 
   if (!result.ok) {
-    if (result.error === "Please fill all fields") return { status: 400, body: { ok: false, error: result.error } };
+    if (result.error === "Please fill all fields") {
+      return { status: 400, body: { ok: false, code: "empty", error: result.error } };
+    }
     const tries = (row.wrong_tries || 0) + 1;
     const patch =
       tries >= MAX_WRONG_TRIES
@@ -121,12 +129,18 @@ export async function verifyPickup(sb, token, answers, now = new Date()) {
         body: {
           ok: false,
           locked: true,
+          code: "locked",
           minutes: LOCK_MINUTES,
           error: `Too many wrong tries. Try again in ${LOCK_MINUTES} min.`,
         },
       };
     }
-    return { status: 401, body: { ok: false, error: result.error, triesLeft: MAX_WRONG_TRIES - tries } };
+    const code = result.error.includes("Both")
+      ? "wrong_both"
+      : result.error.includes("last name")
+        ? "wrong_name"
+        : "wrong_id";
+    return { status: 401, body: { ok: false, code, error: result.error, triesLeft: MAX_WRONG_TRIES - tries } };
   }
 
   await update(sb, token, { verified_at: now.toISOString(), wrong_tries: 0, locked_until: null });

@@ -27,3 +27,24 @@ describe("how it works translations", () => {
     expect(isRtl("en")).toBe(false);
   });
 });
+
+import { PICKUP, tr } from "./pickup";
+
+describe("pickup page translations", () => {
+  const keysOf = (o, pre = "") =>
+    Object.entries(o).flatMap(([k, v]) => (v && typeof v === "object" ? keysOf(v, `${pre}${k}.`) : [`${pre}${k}`]));
+
+  it("has every language with the same keys as English", () => {
+    const en = keysOf(PICKUP.en).sort();
+    for (const { code } of LANGUAGES) {
+      expect(PICKUP[code], code).toBeTruthy();
+      expect(keysOf(PICKUP[code]).sort(), code).toEqual(en);
+    }
+  });
+
+  it("fills values and falls back to English", () => {
+    expect(tr("en", "welcomeName", { name: "Sara" })).toBe("Welcome Sara");
+    expect(tr("de", "err.triesLeft", { n: 3 })).toBe("Noch 3 Versuche");
+    expect(tr("xx", "continue")).toBe("Continue");
+  });
+});
