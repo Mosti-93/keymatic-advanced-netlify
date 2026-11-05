@@ -13,6 +13,7 @@ export default function CreateMachinePage() {
     location: "",
     machineAddress: "",
     capacity: "",
+    cloudUrl: "",
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
@@ -103,7 +104,7 @@ export default function CreateMachinePage() {
     setLoading(true);
     setMessage("");
 
-    let { machineId, machineName, location, machineAddress, capacity } = form;
+    let { machineId, machineName, location, machineAddress, capacity, cloudUrl } = form;
     machineId = (machineId || "").toUpperCase(); // Force uppercase before validation
 
     if (!isValidMachineId(machineId)) {
@@ -123,6 +124,10 @@ export default function CreateMachinePage() {
           location,
           machine_address: machineAddress,
           capacity: capacity === "" ? null : parseInt(capacity, 10),
+          machine_cloud_url:
+            String(cloudUrl || "")
+              .trim()
+              .replace(/\/+$/, "") || null,
         })
         .eq("id", editingMachineId));
     } else {
@@ -133,6 +138,10 @@ export default function CreateMachinePage() {
           location,
           machine_address: machineAddress,
           capacity: capacity === "" ? null : parseInt(capacity, 10),
+          machine_cloud_url:
+            String(cloudUrl || "")
+              .trim()
+              .replace(/\/+$/, "") || null,
         },
       ]));
     }
@@ -146,7 +155,7 @@ export default function CreateMachinePage() {
       }
     } else {
       setMessage(editMode ? "Machine updated successfully!" : "Machine saved successfully!");
-      setForm({ machineId: "", machineName: "", location: "", machineAddress: "", capacity: "" });
+      setForm({ machineId: "", machineName: "", location: "", machineAddress: "", capacity: "", cloudUrl: "" });
       setEditMode(false);
       setEditingMachineId(null);
       fetchMachines();
@@ -162,6 +171,7 @@ export default function CreateMachinePage() {
       location: machine.location || "",
       machineAddress: machine.machine_address || "",
       capacity: machine.capacity?.toString() || "",
+      cloudUrl: machine.machine_cloud_url || "",
     });
     setEditMode(true);
     setEditingMachineId(machine.id);
@@ -230,7 +240,7 @@ export default function CreateMachinePage() {
   useLoadOnMount(fetchMachines);
 
   const resetForm = () => {
-    setForm({ machineId: "", machineName: "", location: "", machineAddress: "", capacity: "" });
+    setForm({ machineId: "", machineName: "", location: "", machineAddress: "", capacity: "", cloudUrl: "" });
     setEditMode(false);
     setEditingMachineId(null);
     setMessage("");
@@ -271,6 +281,12 @@ export default function CreateMachinePage() {
             {field("Location (map link)", "location", { placeholder: "Paste a Google Maps link", required: true })}
             {field("Address", "machineAddress", { placeholder: "Street, building, floor…" })}
             {field("Capacity", "capacity", { type: "number", min: 1, placeholder: "Number of slots", required: true })}
+            {field(
+              "Pi address",
+              "cloudUrl",
+              { type: "url", placeholder: "https://api-a08.myotp.site" },
+              "Used by Refresh. The Pi's Cloudflare Tunnel address."
+            )}
             <div className="flex gap-2 pt-2 md:col-span-2 lg:col-span-3 md:justify-end">
               <button type="submit" disabled={loading} className="k-btn-primary flex-1 md:flex-none md:min-w-40">
                 {loading ? "Saving…" : editMode ? "Save changes" : "Add machine"}
