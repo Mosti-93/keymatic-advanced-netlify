@@ -168,8 +168,7 @@ export default function CreateKeyPage() {
 
   // ownerList is passed when called during the first load, before ownersById is ready.
   const handleEdit = (key, ownerList) => {
-    const ownerObj =
-      (ownerList ? ownerList.find((o) => o.id === key.owner_id) : ownersById.get(key.owner_id)) || null;
+    const ownerObj = (ownerList ? ownerList.find((o) => o.id === key.owner_id) : ownersById.get(key.owner_id)) || null;
     setForm({
       key_id: key.key_id,
       UID: key.UID,

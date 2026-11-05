@@ -30,16 +30,21 @@ export default function SignUpPage() {
     return `${getOrigin()}/account-verified`;
   };
 
+  // Runs on the server (/api/check-email): visitors are not signed in yet, so the
+  // browser cannot read public.users once Row Level Security is on.
   const checkEmailExistsInUsersTable = async (trimmedEmail) => {
-    const { data, error } = await supabase
-      .from("users")
-      .select("id")
-      .ilike("email", trimmedEmail.replace(/[\\%_]/g, "\\$&"))
-      .limit(1)
-      .maybeSingle();
-
-    if (error) return { ok: false, exists: null, message: error.message };
-    return { ok: true, exists: !!data };
+    try {
+      const res = await fetch("/api/check-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmedEmail }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return { ok: false, exists: null, message: data.error || `HTTP ${res.status}` };
+      return { ok: true, exists: !!data.exists };
+    } catch (e) {
+      return { ok: false, exists: null, message: e.message };
+    }
   };
 
   const handleSignUp = async (e) => {
