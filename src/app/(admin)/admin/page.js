@@ -86,7 +86,15 @@ function MachineCard({ m }) {
         {m.slots.map((s) => (
           <div
             key={s.n}
-            title={s.room ? `Slot ${s.n}: room ${s.room}` : `Slot ${s.n}: empty`}
+            title={
+              s.room
+                ? `Slot ${s.n}: room ${s.room}`
+                : s.unreg
+                  ? `Slot ${s.n}: unregistered key ${s.uid}`
+                  : s.uid
+                    ? `Slot ${s.n}: key ${s.uid} has no room`
+                    : `Slot ${s.n}: empty`
+            }
             className={`h-12 rounded-lg flex flex-col items-center justify-center text-[11px] leading-tight border ${
               s.room
                 ? "bg-[var(--k-accent)] border-[var(--k-accent)] text-white"
@@ -96,7 +104,7 @@ function MachineCard({ m }) {
             }`}
           >
             <span className="font-semibold">{s.n}</span>
-            <span className="truncate max-w-full px-1">{s.room || (s.uid ? "?" : "—")}</span>
+            <span className="truncate max-w-full px-1">{s.room || (s.unreg ? "Unreg." : s.uid ? "?" : "—")}</span>
           </div>
         ))}
       </div>
@@ -140,7 +148,7 @@ export default function Dashboard() {
         supabase.from("machines").select("*"),
         supabase.from("users").select("id, name, email, role"),
         supabase.from("clients").select("id, first_name, last_name, email, key_id, check_in, check_out"),
-        supabase.from("key_slot_presence").select("machine_id, slot_number, UID"),
+        supabase.from("key_slot_presence").select("machine_id, slot_number, UID, NON_REG_UID"),
       ]);
       const names = ["keys", "machines", "users", "clients", "key slots"];
       setErrors(results.map((r, i) => (r.error ? `${names[i]}: ${r.error.message}` : null)).filter(Boolean));
@@ -210,7 +218,9 @@ export default function Dashboard() {
         const list = Array.from({ length: capacity }, (_, i) => {
           const s = bySlot.get(i + 1);
           const uid = s?.UID ? clean(s.UID).toUpperCase() : "";
-          return { n: i + 1, uid, room: uid ? roomByUid.get(uid) || "" : "" };
+          // A key the machine does not know (not in its whitelist) is reported in NON_REG_UID.
+          const unreg = !uid && s?.NON_REG_UID ? clean(s.NON_REG_UID).toUpperCase() : "";
+          return { n: i + 1, uid: uid || unreg, unreg: Boolean(unreg), room: uid ? roomByUid.get(uid) || "" : "" };
         });
         return {
           id: m.id,

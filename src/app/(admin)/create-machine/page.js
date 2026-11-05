@@ -70,11 +70,12 @@ export default function CreateMachinePage() {
             //  - we don't need the row data, only the count
             //
             // NOTE: .not('UID','is',null) means "UID IS NOT NULL"
+            // Unregistered keys (NON_REG_UID) also take a slot, so count them too.
             const { count, error } = await supabase
               .from("key_slot_presence")
               .select("UID", { count: "exact", head: true })
               .eq("machine_id", mid)
-              .not("UID", "is", null);
+              .or("UID.not.is.null,NON_REG_UID.not.is.null");
 
             if (error) {
               console.error("Error fetching UID count for machine", mid, error);
