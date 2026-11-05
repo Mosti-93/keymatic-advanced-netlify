@@ -54,6 +54,19 @@ export default function CreateKeyPage() {
 
     if (!ownersRes.error) setOwners(ownersRes.data || []);
     setLoaded(true);
+
+    // Opened from the dashboard's "Edit" link (/create-key?edit=<key id>):
+    // put that key straight into the edit form.
+    const editId = new URLSearchParams(window.location.search).get("edit");
+    if (editId && !keysRes.error) {
+      const target = (keysRes.data || []).find((k) => String(k.id) === editId);
+      if (target) {
+        handleEdit(target, ownersRes.data || []);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } else {
+        setMessage("That key was not found. It may have been deleted.");
+      }
+    }
   };
 
   // -------- HELPERS --------
@@ -153,8 +166,10 @@ export default function CreateKeyPage() {
     setLoading(false);
   };
 
-  const handleEdit = (key) => {
-    const ownerObj = ownersById.get(key.owner_id) || null;
+  // ownerList is passed when called during the first load, before ownersById is ready.
+  const handleEdit = (key, ownerList) => {
+    const ownerObj =
+      (ownerList ? ownerList.find((o) => o.id === key.owner_id) : ownersById.get(key.owner_id)) || null;
     setForm({
       key_id: key.key_id,
       UID: key.UID,
