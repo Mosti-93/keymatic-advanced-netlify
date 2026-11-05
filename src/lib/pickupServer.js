@@ -209,7 +209,7 @@ async function sendPickupConfirmation(token, row) {
   const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (!base) return false;
   const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), 2500);
+  const t = setTimeout(() => controller.abort(), 2000);
   try {
     const r = await fetch(`${base}/functions/v1/notify-pickup`, {
       method: "POST",
@@ -267,7 +267,7 @@ export async function runPickupAction(sb, token, action, now = new Date()) {
       await new Promise((r) => setTimeout(r, 200));
       const limit = parseLimitSwitch(await callMachine(row.door_status_req, T.status));
       if (limit === "ON") return { status: 200, body: { result: "blocked" } };
-      if (limit !== "OFF") return { status: 200, body: { result: "unknown" } };
+      if (limit !== "OFF") return { status: 200, body: { result: "unknown", reason: `door reply: ${String(limit)}` } };
       await Promise.all([
         tryMachine(row.LCD_room_req, T.lcd),
         logEvent(sb, row, "door_unlocked", 0, "guest pickup (web)"),
@@ -287,8 +287,15 @@ export async function runPickupAction(sb, token, action, now = new Date()) {
     }
 
     if (action === "check") {
-      const resp = await callMachine(row.relay_status_req, T.status);
-      const text = String(resp?.esp_response || extractStatusText(resp)).toUpperCase();
+      // The ESP reply is the first line on the bus, which can be "No response"
+      // or another board's message. Ask twice before giving up (stays under the ~10 s server limit).
+      let text = "";
+      for (let i = 0; i < 2; i++) {
+        const resp = await callMachine(row.relay_status_req, T.status);
+        text = String(resp?.esp_response || extractStatusText(resp)).toUpperCase();
+        if (text.includes("LIMIT") && (text.includes(":ON") || text.includes(":OFF"))) break;
+        await new Promise((r) => setTimeout(r, 300));
+      }
       if (text.includes("LIMIT") && text.includes(":ON")) {
         await keepAlive();
         return { status: 200, body: { result: "still_in" } };
@@ -300,7 +307,8 @@ export async function runPickupAction(sb, token, action, now = new Date()) {
         const emailSent = await sendPickupConfirmation(token, row);
         return { status: 200, body: { result: "taken", emailSent } };
       }
-      return { status: 200, body: { result: "unknown" } };
+      console.warn("[pickup] key status reply not understood:", text.slice(0, 200));
+      return { status: 200, body: { result: "unknown", reason: `reply: ${text.slice(0, 80)}` } };
     }
 
     return { status: 400, body: { result: "bad_action" } };
