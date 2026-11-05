@@ -271,7 +271,7 @@ export default function Page() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-indigo-700 to-purple-800 text-white">
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-700 to-blue-900 text-white">
         <p className="text-lg">Loading...</p>
       </div>
     );
@@ -297,7 +297,7 @@ export default function Page() {
 
   if (!data) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-indigo-700 to-purple-800 text-white p-6">
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-700 to-blue-900 text-white p-6">
         <h1 className="text-5xl font-bold mb-4">Error</h1>
         <p className="text-lg text-center">Unable to load pickup information.</p>
       </div>
@@ -307,7 +307,7 @@ export default function Page() {
   return (
     <div
       ref={pageRef}
-      className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-indigo-700 to-purple-800 text-white px-4 py-8 relative"
+      className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-700 to-blue-900 text-white px-4 py-8 relative"
     >
       {step !== "welcome" && (
         <div className="text-center mb-8">
@@ -365,7 +365,7 @@ export default function Page() {
             {/* Start Button */}
             <button
               onClick={() => setStep("confirm")}
-              className="mt-4 w-full bg-white text-indigo-900 font-semibold py-2 rounded-lg hover:bg-indigo-100 transition"
+              className="mt-4 w-full bg-white text-blue-900 font-semibold py-2 rounded-lg hover:bg-blue-100 transition"
             >
               ✅ I’m at the machine — Start
             </button>
@@ -466,7 +466,7 @@ export default function Page() {
             type="button"
             onClick={handleVerify}
             disabled={!answersComplete || checking}
-            className="mt-4 w-full bg-white text-indigo-900 font-semibold py-2 rounded-lg hover:bg-indigo-100 transition disabled:opacity-50"
+            className="mt-4 w-full bg-white text-blue-900 font-semibold py-2 rounded-lg hover:bg-blue-100 transition disabled:opacity-50"
           >
             {checking ? "Checking..." : "Continue"}
           </button>
@@ -484,7 +484,7 @@ export default function Page() {
           <button
             onClick={handleOpenDoor}
             disabled={apiLoading}
-            className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg w-full transition transform active:scale-95 disabled:opacity-50"
+            className="bg-white hover:bg-blue-100 text-blue-900 font-bold py-2 px-4 rounded-lg w-full transition transform active:scale-95 disabled:opacity-50"
           >
             {apiLoading ? "Opening..." : "Open Machine Door"}
           </button>
