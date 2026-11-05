@@ -1,21 +1,27 @@
 import crypto from "crypto";
 import { requireRole } from "@/utils/requireRole";
+import { getServiceClient } from "@/lib/pickupServer";
 
-// Known Pi addresses (Cloudflare Tunnel) per machine. An env var
-// MACHINE_<ID>_URL (e.g. MACHINE_A12_URL) overrides the default.
-// Machine A01 runs on the Pi "piA08", reachable at api-a08.myotp.site.
-const DEFAULT_ENDPOINTS = {
-  A01: "https://api-a08.myotp.site",
-};
-
-// Resolve which Pi URL we should talk to for a given machine ID
-function getMachineEndpoint(machineId) {
-  const id = String(machineId || "")
-    .trim()
-    .toUpperCase();
-  if (!/^[A-Z0-9_]+$/.test(id)) return undefined;
-  const fromEnv = String(process.env[`MACHINE_${id}_URL`] || "").trim();
-  return (fromEnv || DEFAULT_ENDPOINTS[id] || "").replace(/\/+$/, "") || undefined;
+// Resolve which Pi URL we should talk to for a given machine ID:
+// 1) MACHINE_<ID>_URL env var (override), 2) machines.machine_cloud_url
+// (set on the Machines page as "Pi address"), else none.
+async function getMachineEndpoint(machineId) {
+  const id = String(machineId || "").trim();
+  if (!/^[A-Za-z0-9_]+$/.test(id)) return undefined;
+  const fromEnv = String(process.env[`MACHINE_${id.toUpperCase()}_URL`] || "").trim();
+  if (fromEnv) return fromEnv.replace(/\/+$/, "");
+  try {
+    const { data } = await getServiceClient()
+      .from("machines")
+      .select("machine_cloud_url")
+      .eq("machine_id", id)
+      .maybeSingle();
+    const url = String(data?.machine_cloud_url || "").trim();
+    return url ? url.replace(/\/+$/, "") : undefined;
+  } catch (e) {
+    console.error("[refresh-keys] could not read machine address:", e);
+    return undefined;
+  }
 }
 
 // Make a timestamp string like "2025-10-29T18:05:43"
@@ -52,7 +58,7 @@ export async function POST(request, context) {
   const dashboardMachineId = params.machineId; // e.g. "A12"
 
   // 1. Pick which Pi to talk to
-  const endpoint = getMachineEndpoint(dashboardMachineId);
+  const endpoint = await getMachineEndpoint(dashboardMachineId);
   if (!endpoint) {
     return new Response(
       JSON.stringify({
