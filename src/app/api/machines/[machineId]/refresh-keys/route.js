@@ -48,14 +48,15 @@ function buildSignature(cmd) {
   return crypto.createHmac("sha256", SECRET_KEY).update(cmd, "utf8").digest("base64");
 }
 
-// Your Next.js version requires "await context" to read params
+// Next.js 15+: context.params is a Promise and must be awaited itself
+// (awaiting `context` alone leaves params.machineId undefined).
 export async function POST(request, context) {
   // Only admins may send signed commands to a machine.
   const auth = await requireRole(request, ["admin"]);
   if (auth.response) return auth.response;
 
-  const { params } = await context;
-  const dashboardMachineId = params.machineId; // e.g. "A12"
+  const { machineId } = await context.params;
+  const dashboardMachineId = String(machineId || "").trim(); // e.g. "A08"
 
   // 1. Pick which Pi to talk to
   const endpoint = await getMachineEndpoint(dashboardMachineId);
