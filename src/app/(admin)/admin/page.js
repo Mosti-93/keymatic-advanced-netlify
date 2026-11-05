@@ -252,7 +252,7 @@ export default function Dashboard() {
           doorAt: toDate(m.door_updated_at),
           lastSeen,
           // The machine reports every minute; 3 minutes of silence = offline.
-          online: lastSeen ? Date.now() - lastSeen.getTime() < 3 * 60 * 1000 : null,
+          online: lastSeen ? new Date() - lastSeen < 3 * 60 * 1000 : null,
           name: m["Machine name"] || code,
           place: m.machine_address || m.location || "",
           capacity,
