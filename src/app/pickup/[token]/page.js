@@ -3,15 +3,21 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams } from "next/navigation";
 import Image from "next/image";
-import {
-  formatName,
-  fetchWithTimeout,
-  extractStatusText,
-  isRelayOnSuccess,
-  parseLimitSwitch,
-  normalizeToken,
-  checkAnswers,
-} from "@/lib/pickup";
+import { formatName, normalizeToken } from "@/lib/pickup";
+
+const OFFLINE_MSG = "The machine is offline. Please check that it is connected to power, or contact support.";
+
+/** POST to one of this link's server routes; returns { status, body }. */
+async function postLink(token, path, payload) {
+  const res = await fetch(`/api/pickup-link/${encodeURIComponent(token)}/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    cache: "no-store",
+  });
+  const body = await res.json().catch(() => ({}));
+  return { status: res.status, body };
+}
 
 export default function Page() {
   const { token } = useParams();
@@ -21,6 +27,7 @@ export default function Page() {
   const [expired, setExpired] = useState(false);
   const [expiredReason, setExpiredReason] = useState(null);
   const [error, setError] = useState("");
+  const [checking, setChecking] = useState(false);
 
   const [data, setData] = useState(null);
   const [step, setStep] = useState("welcome");
@@ -36,6 +43,7 @@ export default function Page() {
   // API states
   const [apiLoading, setApiLoading] = useState(false);
   const [apiError, setApiError] = useState(null);
+  const [keyReleased, setKeyReleased] = useState(false);
 
   const pin0 = useRef(null);
   const pin1 = useRef(null);
@@ -62,41 +70,29 @@ export default function Page() {
           setError(res.status === 404 ? "Invalid or not found." : payload.error || "Could not load this pickup link.");
           return;
         }
-        const row = payload.row;
+        const b = payload.booking || {};
 
-        const now = new Date();
-        const expiredByDate = row.check_out ? now > new Date(row.check_out) : false;
-        const inactive = row.valid === false;
-
-        if (expiredByDate) {
-          setExpired(true);
-          setExpiredReason("time");
-        }
-        if (inactive) {
+        if (b.state === "used") {
           setExpired(true);
           setExpiredReason("invalid");
+        } else if (b.state === "expired") {
+          setExpired(true);
+          setExpiredReason("time");
+        } else if (b.state === "notyet") {
+          setExpired(true);
+          setExpiredReason("notyet");
         }
         if (!mounted) return;
 
         setData({
-          city: row.city || "",
-          machineAddress: row.machine_address || "",
-          machineName: row.machine_name || "Unknown machine",
-          machineId: String(row.machine_id ?? "").toUpperCase(),
-          roomNo: row.room_no ?? null,
-          platform: row.platform || "",
-          clientLastName: row.client_last_name || "",
-          clientFirstName: row.client_first_name || "",
-          doorOnUrl: row.door_on_req || "",
-          doorStatusUrl: row.door_status_req || "",
-          relayOnUrl: row.relay_on_req || "",
-          relayStatusUrl: row.relay_status_req || "",
-          lcdRoomUrl: row.LCD_room_req || "",
-          lcdFlashUrl: row.LCD_flash_req || "",
-          lcdOffUrl: row.LCD_off_req || "",
+          city: b.city || "",
+          machineAddress: b.machineAddress || "",
+          machineName: b.machineName || "Unknown machine",
+          roomNo: b.roomNo ?? null,
+          platform: b.platform || "",
+          clientFirstName: b.clientFirstName || "",
+          checkIn: b.checkIn || null,
         });
-
-        setData((prev) => ({ ...prev, uid: payload.uid ?? null }));
       } catch (e) {
         setError("Unexpected error: " + (e?.message || String(e)));
       } finally {
@@ -147,7 +143,7 @@ export default function Page() {
       const next = [...machineId];
       next[focusedIndex] = value.toUpperCase();
       setMachineId(next);
-      autoCheck(lastName, next);
+      setError("");
       keypadRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
 
       if (focusedIndex < 2) setFocusedIndex(focusedIndex + 1);
@@ -169,173 +165,105 @@ export default function Page() {
         next[focusedIndex - 1] = "";
       }
       setMachineId(next);
-      autoCheck(lastName, next);
+      setError("");
       setShowKeypad(true);
       keypadRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
   }
 
-  /** Apply the result of checking the guest's answers. */
-  function applyCheck(nextLastName, nextMachineId) {
-    const result = checkAnswers({ lastName: nextLastName, machineId: nextMachineId }, data);
-    setError(result.error);
-    if (result.ok) setStep("openDoor");
+  const answersComplete = lastName.trim() !== "" && machineId.every((c) => c.trim() !== "");
+
+  /** Send the guest's answers to the server, which decides. */
+  async function handleVerify() {
+    if (!answersComplete || checking) return;
+    setChecking(true);
+    setError("");
+    try {
+      const { status, body } = await postLink(linkToken, "verify", {
+        lastName: lastName.trim(),
+        machineId: machineId.join(""),
+      });
+      if (body.ok) {
+        setStep("openDoor");
+        return;
+      }
+      if (status === 410) {
+        setExpired(true);
+        setExpiredReason(body.state === "used" ? "invalid" : body.state === "notyet" ? "notyet" : "time");
+        return;
+      }
+      const left = typeof body.triesLeft === "number" ? ` (${body.triesLeft} tries left)` : "";
+      setError((body.error || "Could not check your answers.") + left);
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setChecking(false);
+    }
   }
 
-  /** Check automatically as soon as both answers are complete. */
-  function autoCheck(nextLastName, nextMachineId) {
-    if (data && nextLastName.trim() !== "" && nextMachineId.every((c) => c.trim() !== "")) {
-      applyCheck(nextLastName, nextMachineId);
+  /** Ask the server to run one machine step. Returns the result word. */
+  async function runAction(action) {
+    const { status, body } = await postLink(linkToken, "action", { action });
+    if (status === 401) {
+      // The check expired (more than a few minutes passed). Ask again.
+      setStep("confirm");
+      setError("Please confirm your last name and Machine ID again.");
+      return "unverified";
     }
+    if (status === 410) {
+      setExpired(true);
+      setExpiredReason(body.state === "used" ? "invalid" : body.state === "notyet" ? "notyet" : "time");
+      return "closed";
+    }
+    return body.result || "error";
   }
 
   async function handleOpenDoor() {
     setApiLoading(true);
     setApiError(null);
-
     try {
-      if (!data?.doorOnUrl) throw new Error("Missing door_on_req URL");
-
-      const doorResp = await fetchWithTimeout(data.doorOnUrl, 10000);
-
-      if (isRelayOnSuccess(doorResp) && data?.doorStatusUrl) {
-        try {
-          // brief pause then ask the machine for the door status
-          await new Promise((res) => setTimeout(res, 200));
-          const statusResp = await fetchWithTimeout(data.doorStatusUrl, 8000);
-          const limit = parseLimitSwitch(statusResp);
-
-          if (limit === "OFF") {
-            // Door confirmed OPEN
-
-            // Show room/slot on LCD now that door status is confirmed
-            if (data?.lcdRoomUrl) {
-              try {
-                await fetchWithTimeout(data.lcdRoomUrl, 8000);
-              } catch (e) {
-                console.warn("[pickup] LCD_room_req failed:", e);
-              }
-            }
-
-            setStep("releaseKey");
-          } else if (limit === "ON") {
-            // Door reports it didn't open
-            setApiError("The door could not open. Please check that nothing is blocking it.");
-          } else {
-            // Unknown status text
-            setApiError("Unexpected door status. Please try again.");
-          }
-        } catch (e) {
-          // @ts-ignore
-          if (e.code === "TIMEOUT") {
-            setApiError("The machine is offline. Please check that it is connected to power, or contact support.");
-          } else {
-            setApiError(`Door status error: ${e.message}`);
-          }
-        }
-        return;
-      }
-
-      setApiError("The machine is offline. Please check that it is connected to power, or contact support.");
-    } catch (error) {
-      // @ts-ignore
-      if (error.code === "TIMEOUT" || String(error.message || "").startsWith("HTTP "))
-        setApiError("The machine is offline. Please check that it is connected to power, or contact support.");
-      else setApiError(`Door operation failed: ${error.message}`);
+      const result = await runAction("open");
+      if (result === "open") setStep("releaseKey");
+      else if (result === "blocked") setApiError("The door could not open. Please check that nothing is blocking it.");
+      else if (result === "offline") setApiError(OFFLINE_MSG);
+      else if (result === "unknown") setApiError("Unexpected door status. Please try again.");
+      else if (result === "error") setApiError("Something went wrong. Please try again.");
+    } catch {
+      setApiError("Network error. Please try again.");
     } finally {
       setApiLoading(false);
     }
   }
 
+  /** Is the key out yet? Finishes the pickup on the server when it is. */
+  async function checkKey() {
+    const result = await runAction("check");
+    if (result === "taken") setStep("closeDoor");
+    else if (result === "still_in") setApiError("Please take your key, then tap the button again.");
+    else if (result === "offline") setApiError(OFFLINE_MSG);
+    else if (result === "unknown") setApiError("Unexpected key status. Please try again.");
+    else if (result === "error") setApiError("Something went wrong. Please try again.");
+    return result;
+  }
+
   async function handleReleaseKey() {
     setApiLoading(true);
     setApiError(null);
-
     try {
-      if (!data?.relayOnUrl) throw new Error("Missing relay_on_req URL");
-
-      // Flash LCD just before firing the relay to highlight the slot
-      if (data?.lcdFlashUrl) {
-        try {
-          await fetchWithTimeout(data.lcdFlashUrl, 8000);
-        } catch (e) {
-          console.warn("[pickup] LCD_flash_req failed:", e);
-        }
-      }
-
-      await fetchWithTimeout(data.relayOnUrl, 10000);
-
-      // Give the hardware time to move
-      await new Promise((res) => setTimeout(res, 5000));
-
-      if (!data?.relayStatusUrl) throw new Error("Missing relay_status_req URL");
-
-      const statusResp = await fetchWithTimeout(data.relayStatusUrl, 8000);
-      const respText = (statusResp.esp_response || extractStatusText(statusResp)).toUpperCase();
-
-      if (respText.includes("LIMIT") && respText.includes(":ON")) {
-        setApiError("Please take your key.");
+      if (keyReleased) {
+        await checkKey();
         return;
       }
-
-      if (respText.includes("LIMIT") && respText.includes(":OFF")) {
-        setApiError("");
-
-        // Turn LCD off after the slot action is confirmed finished
-        if (data?.lcdOffUrl) {
-          try {
-            await fetchWithTimeout(data.lcdOffUrl, 8000);
-          } catch (e) {
-            console.warn("[pickup] LCD_off_req failed:", e);
-          }
-        }
-
-        // 1) Mark DB state (invalidate link, mark key out, clear slot)
-        try {
-          const done = await fetch(`/api/pickup-link/${encodeURIComponent(linkToken)}/complete`, { method: "POST" });
-          if (!done.ok) console.warn("complete pickup failed:", done.status);
-        } catch (e) {
-          console.warn("invalidateByUID failed:", e);
-        }
-
-        // 2) TRIGGER EMAILS — call your Supabase Edge Function (notify-pickup)
-        //    Inserted RIGHT AFTER invalidateByUID and BEFORE closing UI
-        try {
-          const payload = {
-            token: linkToken, // <-- use normalized token
-            uid: data?.uid,
-            machineId: data?.machineId,
-            roomNo: data?.roomNo,
-          };
-
-          const resp = await fetch("https://vnnqjmsshzbmngnlyvzq.functions.supabase.co/notify-pickup", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          });
-
-          if (!resp.ok) {
-            setApiError(`Couldn’t send confirmation email (${resp.status}).`);
-          }
-        } catch (e) {
-          console.warn("notify-pickup fetch error:", e);
-          setApiError("Email trigger failed. Check console for details.");
-        }
-
-        // 3) Continue the UI flow
-        setStep("closeDoor");
-        return;
-      }
-
-      // Unknown response
-      setApiError("Unexpected key status. Please try again.");
-    } catch (error) {
-      // @ts-ignore
-      if (error.code === "TIMEOUT" || String(error.message || "").startsWith("HTTP ")) {
-        setApiError("The machine is offline. Please check that it is connected to power, or contact support.");
-      } else {
-        setApiError(`Key release failed: ${error.message}`);
-      }
+      const result = await runAction("release");
+      if (result === "released") {
+        setKeyReleased(true);
+        // Give the hardware time to move, then check the slot.
+        await new Promise((res) => setTimeout(res, 5000));
+        await checkKey();
+      } else if (result === "offline") setApiError(OFFLINE_MSG);
+      else if (result === "error") setApiError("Something went wrong. Please try again.");
+    } catch {
+      setApiError("Network error. Please try again.");
     } finally {
       setApiLoading(false);
     }
@@ -350,11 +278,15 @@ export default function Page() {
   }
 
   if (expired) {
-    const title = expiredReason === "invalid" ? "Invalid link" : "Expired";
+    const title = expiredReason === "invalid" ? "Invalid link" : expiredReason === "notyet" ? "Not yet" : "Expired";
     const msg =
       expiredReason === "invalid"
         ? "This pickup link has already been used and is no longer valid."
-        : "This pickup link has expired and can’t be used anymore.";
+        : expiredReason === "notyet"
+          ? `This pickup link works from your check-in time${
+              data?.checkIn ? ` (${new Date(data.checkIn).toLocaleString()})` : ""
+            }. Please come back then.`
+          : "This pickup link has expired and can’t be used anymore.";
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-red-700 to-red-900 text-white p-6">
         <h1 className="text-5xl font-bold mb-4">{title}</h1>
@@ -453,7 +385,7 @@ export default function Page() {
             value={lastName}
             onChange={(e) => {
               setLastName(e.target.value);
-              autoCheck(e.target.value, machineId);
+              setError("");
             }}
             className={`p-2 border rounded-lg w-full mb-3 text-white placeholder-gray-300 text-center focus:outline-none focus:ring-2 ${
               error.includes("last name")
@@ -530,6 +462,15 @@ export default function Page() {
             </div>
           )}
 
+          <button
+            type="button"
+            onClick={handleVerify}
+            disabled={!answersComplete || checking}
+            className="mt-4 w-full bg-white text-indigo-900 font-semibold py-2 rounded-lg hover:bg-indigo-100 transition disabled:opacity-50"
+          >
+            {checking ? "Checking..." : "Continue"}
+          </button>
+
           {error && (
             <p className="text-red-300 mt-2 font-medium bg-red-900/30 px-4 py-2 rounded-lg border border-red-500 animate-pulse">
               {error}
@@ -558,7 +499,11 @@ export default function Page() {
             disabled={apiLoading}
             className="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg w-full transition transform active:scale-95 disabled:opacity-50"
           >
-            {apiLoading ? "Releasing...Please Pull the key Now !" : "🔑 Release Key"}
+            {apiLoading
+              ? "Releasing... please pull the key now"
+              : keyReleased
+                ? "✅ I took my key — check again"
+                : "🔑 Release Key"}
           </button>
           {apiError && <p className="text-red-300 mt-2">{apiError}</p>}
         </div>
