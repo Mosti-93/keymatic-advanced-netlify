@@ -18,7 +18,7 @@ function esc(v: unknown): string {
     .replace(/"/g, "&quot;");
 }
 
-const hmacKey = "mysupersecretkey";
+const hmacKey = Deno.env.get("SIGNING_SECRET") ?? ""; // set in Supabase: Edge Functions -> Secrets
 const DEFAULT_CLOUD_URL = "https://roy-il-breast-mineral.trycloudflare.com";
 
 const CORS_HEADERS = {
