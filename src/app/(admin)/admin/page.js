@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/utils/supabaseClient";
 import DataTable from "@/components/DataTable";
+import { authHeaders } from "@/utils/requireRole";
 
 const toDate = (v) => (v ? new Date(String(v).replace(" ", "T")) : null);
 const clean = (v) => String(v ?? "").trim();
@@ -69,7 +70,19 @@ function ViewSwitch({ view, onChange }) {
   );
 }
 
-function MachineCard({ m }) {
+function OnlineBadge({ st }) {
+  if (!st) return <span className="text-[12px] k-faint">Checking…</span>;
+  if (!st.hasAddress) return <span className="text-[12px] k-faint">No Pi address</span>;
+  return st.online ? (
+    <span className="text-[12px] font-medium text-[var(--k-green)]">● Online</span>
+  ) : (
+    <span className="text-[12px] font-medium text-[var(--k-red)]" title={st.error || ""}>
+      ● Offline
+    </span>
+  );
+}
+
+function MachineCard({ m, status }) {
   return (
     <article className="k-card-flat !p-5 flex flex-col gap-4">
       <div className="flex items-start justify-between gap-2">
@@ -77,6 +90,9 @@ function MachineCard({ m }) {
           <p className="text-[12px] font-medium tracking-wide k-faint">{m.code}</p>
           <h3 className="text-[19px] font-semibold truncate">{m.name}</h3>
           {m.place && <p className="text-[13px] k-muted truncate">{m.place}</p>}
+          <div className="mt-1">
+            <OnlineBadge st={status} />
+          </div>
         </div>
         <span className={m.used > 0 ? "k-badge-green" : "k-badge-gray"}>
           {m.used}/{m.capacity} used
@@ -125,6 +141,27 @@ export default function Dashboard() {
   const [clients, setClients] = useState([]);
   const [slots, setSlots] = useState([]);
   const [view, setView] = useState("machines");
+  const [online, setOnline] = useState(null); // { <machine_id>: { online, ms, error, hasAddress } }
+
+  // Ask the server to check every Pi now and then every minute.
+  useEffect(() => {
+    let stop = false;
+    const check = async () => {
+      try {
+        const res = await fetch("/api/machines/status", { headers: await authHeaders(supabase), cache: "no-store" });
+        const data = await res.json();
+        if (!stop && res.ok) setOnline(data.machines || {});
+      } catch {
+        /* keep the last known status */
+      }
+    };
+    check();
+    const timer = setInterval(check, 60000);
+    return () => {
+      stop = true;
+      clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -314,7 +351,9 @@ export default function Dashboard() {
           <section aria-label="Machines" className="mt-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {loading
               ? [0, 1, 2].map((i) => <div key={i} className="k-card-flat h-64 animate-pulse" />)
-              : machineCards.map((m) => <MachineCard key={m.id} m={m} />)}
+              : machineCards.map((m) => (
+                  <MachineCard key={m.id} m={m} status={online ? online[m.code] || { hasAddress: false } : null} />
+                ))}
             {!loading && machineCards.length === 0 && <p className="k-muted">No machines yet.</p>}
           </section>
 
