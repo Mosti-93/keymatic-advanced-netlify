@@ -7,6 +7,7 @@ import { CheckingAccess } from "@/utils/useRequireRole";
 import AppShell from "@/components/AppShell";
 import DataTable, { RowAction, toDate, fmtDate } from "@/components/DataTable";
 import PageHeader, { Notice, FormPanel } from "@/components/PageHeader";
+import PlatformSelect from "@/components/PlatformSelect";
 import { guestStatus, GUEST_FILTERS, STATUS_BADGE } from "@/utils/guestStatus";
 
 /** Today at 10:00, formatted for a datetime-local input (default check-in). */
@@ -30,19 +31,6 @@ export default function OwnerPanelPage() {
     checkOut: "",
     platform: "",
   }));
-  const platforms = [
-    "Airbnb",
-    "Booking.com",
-    "Vrbo",
-    "Vacasa",
-    "FlipKey",
-    "Whimstay",
-    "HomeExchange",
-    "Hipcamp",
-    "Misterb&b",
-    "ThirdHome",
-    "Fairbnb & similar",
-  ];
 
   const [clients, setClients] = useState([]);
   const [clientsLoaded, setClientsLoaded] = useState(false);
@@ -356,7 +344,7 @@ export default function OwnerPanelPage() {
         <div className="space-y-6">
           <FormPanel title={editMode ? "Edit guest" : "Add guest"} addLabel="Add guest" forceOpen={editMode}>
             <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 items-start">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
                 {input("First name", "firstName", { required: true })}
                 {input("Last name", "lastName", { required: true })}
               </div>
@@ -379,24 +367,9 @@ export default function OwnerPanelPage() {
                 <label className="k-label" htmlFor="o-platform">
                   Platform
                 </label>
-                <input
-                  id="o-platform"
-                  list="platform-options"
-                  name="platform"
-                  value={form.platform}
-                  onChange={handleChange}
-                  placeholder="Airbnb, Booking.com…"
-                  className="k-input"
-                  required
-                />
-                <datalist id="platform-options">
-                  {platforms.map((p, idx) => (
-                    <option key={idx} value={p} />
-                  ))}
-                  <option value="Other" />
-                </datalist>
+                <PlatformSelect id="o-platform" value={form.platform} onChange={handleChange} />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3 [&>*]:min-w-0">
                 <div>
                   <label className="k-label" htmlFor="o-checkIn">
                     Check-in
