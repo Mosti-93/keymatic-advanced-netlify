@@ -8,15 +8,20 @@ import { extractStatusText, isRelayOnSuccess, parseLimitSwitch } from "@/lib/pic
 /** Remote actions support can run. `log` = the machine_events kind written after it. */
 export const ACTIONS = {
   open_door: { log: "door_unlocked", needsSlot: false },
-  door_status: { log: null, needsSlot: false },
+  door_status: { log: null, needsSlot: false }, // used after open_door to read the sensor
   unlock_slot: { log: "slot_unlocked", needsSlot: true },
   slot_status: { log: null, needsSlot: true },
   sync: { log: "whitelist_sync", needsSlot: false },
 };
 
-/** How long a remote command stays valid on the Pi. */
-const VALID_BEFORE_MS = 2 * 60 * 1000;
-const VALID_AFTER_MS = 5 * 60 * 1000;
+/**
+ * How long a remote command stays valid on the Pi. The Pi rejected a 5-minute
+ * window as "Command expired" (it compares against its own local clock), so use
+ * the same 24-hour window as PI:REFRESH_WHITELIST. The signed URL is built and
+ * sent by the server in one go and never shown to anyone.
+ */
+const VALID_BEFORE_MS = 24 * 60 * 60 * 1000;
+const VALID_AFTER_MS = 24 * 60 * 60 * 1000;
 // Netlify stops a server function after ~10 s; keep every action well under that.
 const T = { relay: 4500, status: 2500 };
 

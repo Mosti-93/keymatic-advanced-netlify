@@ -123,6 +123,18 @@ export function buildMachineCards({ machines = [], slots = [], keys = [], now = 
     .sort((a, b) => a.code.localeCompare(b.code));
 }
 
+/** Slots laid out like the real machine: rows of 5, 4, 5, 4, … */
+export function slotRows(slots = []) {
+  const rows = [];
+  let i = 0;
+  while (i < slots.length) {
+    const size = rows.length % 2 === 0 ? 5 : 4;
+    rows.push(slots.slice(i, i + size));
+    i += size;
+  }
+  return rows;
+}
+
 /** Bookings for one key, with parsed dates. */
 function stays(clients, key) {
   return (clients || [])
@@ -258,54 +270,35 @@ export function buildUpcoming({ keyStatus = [], keys = [], clients = [], now = n
   return out.sort((a, b) => rank[a.type] - rank[b.type] || a.at - b.at);
 }
 
-/** Problems support should look at first. */
+const notReturnedText = (list) =>
+  `${list.length} ${list.length === 1 ? "key" : "keys"} not returned: ${list
+    .slice(0, 4)
+    .map((r) => (r.room ? `room ${r.room}` : r.keyLabel))
+    .join(", ")}${list.length > 4 ? "…" : ""}`;
+
+/**
+ * Problems support should look at first. Each alert names its machine
+ * (`machine`, null when it has none) and has a `short` text for inside that
+ * machine's card, plus a full `text` that names the machine.
+ */
 export function buildAlerts({ cards = [], keyStatus = [] }) {
   const alerts = [];
+  const known = new Set(cards.map((m) => norm(m.code)));
   for (const m of cards) {
     const href = `/machines/${encodeURIComponent(m.code)}`;
-    if (m.online === false) {
-      alerts.push({
-        tone: "red",
-        machine: m.code,
-        href,
-        text: `${m.name} (${m.code}) is offline${m.lastSeen ? ` · last seen ${fmtAgo(m.lastSeen)}` : ""}`,
-      });
-    }
-    if (m.doorOpenTooLong) {
-      alerts.push({
-        tone: "orange",
-        machine: m.code,
-        href,
-        text: `${m.name} (${m.code}) door open for ${fmtAgo(m.doorAt, "")}`.trim(),
-      });
-    }
-    if (m.unregIn > 0) {
-      alerts.push({
-        tone: "orange",
-        machine: m.code,
-        href,
-        text: `${m.unregIn} unregistered ${m.unregIn === 1 ? "key" : "keys"} in ${m.name} (${m.code})`,
-      });
-    }
-    if (m.overLinked) {
-      alerts.push({
-        tone: "orange",
-        machine: m.code,
-        href,
-        text: `${m.name} (${m.code}) has ${m.linked} keys linked but only ${m.capacity} slots`,
-      });
-    }
+    const add = (tone, short) =>
+      alerts.push({ tone, machine: m.code, href, short, text: `${m.name} (${m.code}): ${short}` });
+    if (m.online === false) add("red", `Offline${m.lastSeen ? ` · last seen ${fmtAgo(m.lastSeen)}` : ""}`);
+    if (m.doorOpenTooLong) add("orange", `Door open for ${fmtAgo(m.doorAt, "")}`);
+    if (m.unregIn > 0) add("orange", `${m.unregIn} unregistered ${m.unregIn === 1 ? "key" : "keys"} inside`);
+    if (m.overLinked) add("orange", `${m.linked} keys linked but only ${m.capacity} slots`);
+    const overdue = keyStatus.filter((r) => r.state === "overdue" && norm(r.machineCode) === norm(m.code));
+    if (overdue.length) add("red", notReturnedText(overdue));
   }
-  const overdue = keyStatus.filter((r) => r.state === "overdue");
-  if (overdue.length) {
-    alerts.push({
-      tone: "red",
-      text: `${overdue.length} ${overdue.length === 1 ? "key has" : "keys have"} not been returned: ${overdue
-        .slice(0, 4)
-        .map((r) => (r.room ? `room ${r.room}` : r.keyLabel))
-        .join(", ")}${overdue.length > 4 ? "…" : ""}`,
-      href: "#keys",
-    });
+  const orphan = keyStatus.filter((r) => r.state === "overdue" && !known.has(norm(r.machineCode)));
+  if (orphan.length) {
+    const text = `${notReturnedText(orphan)} (no machine)`;
+    alerts.push({ tone: "red", machine: null, href: "#keys", short: text, text });
   }
   return alerts;
 }

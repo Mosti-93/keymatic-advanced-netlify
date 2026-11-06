@@ -10,6 +10,7 @@ import {
   fmtAgo,
   fmtShort,
   fmtTime,
+  slotRows,
   sortEvents,
 } from "@/lib/machineView";
 
@@ -117,50 +118,79 @@ export function slotTitle(s) {
   return `Slot ${s.n}: empty`;
 }
 
-/** Slot grid. With onSlotClick each slot is a button. */
+/**
+ * Slot grid laid out like the real machine: rows of 5, 4, 5, 4, …
+ * The 4-slot rows sit half a slot in, like the staggered front panel.
+ * With onSlotClick each slot is a button.
+ */
 export function SlotGrid({ m, onSlotClick, large = false, busySlot }) {
   return (
-    <div
-      className={`grid gap-1.5 ${large ? "grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-2" : "grid-cols-5"}`}
-    >
-      {m.slots.map((s) => {
-        const cls = s.unreg
-          ? "bg-[var(--k-orange-soft)] border-[var(--k-orange)] text-[var(--k-orange)]"
-          : s.key && !s.foreign
-            ? "bg-[var(--k-accent)] border-[var(--k-accent)] text-white"
-            : s.uid
-              ? "bg-[var(--k-accent-soft)] border-[var(--k-accent)] text-[var(--k-accent)]"
-              : "bg-white border-[var(--k-line)] k-faint";
-        const label = s.unreg ? "Unreg." : s.room || s.keyLabel || (s.uid ? "?" : "—");
-        const inner = (
-          <>
-            <span className="font-semibold">{s.n}</span>
-            <span className="truncate max-w-full px-1">{busySlot === s.n ? "…" : label}</span>
-          </>
-        );
-        const base = `${large ? "h-16 text-[13px]" : "h-12 text-[11px]"} rounded-lg flex flex-col items-center justify-center leading-tight border ${cls}`;
-        return onSlotClick ? (
-          <button
-            key={s.n}
-            type="button"
-            title={slotTitle(s)}
-            onClick={() => onSlotClick(s)}
-            className={`${base} transition hover:ring-2 hover:ring-[var(--k-accent)] hover:ring-offset-1 focus-visible:ring-2 focus-visible:ring-[var(--k-accent)]`}
-          >
-            {inner}
-          </button>
-        ) : (
-          <div key={s.n} title={slotTitle(s)} className={base}>
-            {inner}
-          </div>
-        );
-      })}
+    <div className={`flex flex-col ${large ? "gap-2" : "gap-1.5"}`}>
+      {slotRows(m.slots).map((row, r) => (
+        <div key={r} className={`grid grid-cols-10 ${large ? "gap-2" : "gap-1.5"}`}>
+          {row.map((s, i) => {
+            const cls = s.unreg
+              ? "bg-[var(--k-orange-soft)] border-[var(--k-orange)] text-[var(--k-orange)]"
+              : s.key && !s.foreign
+                ? "bg-[var(--k-accent)] border-[var(--k-accent)] text-white"
+                : s.uid
+                  ? "bg-[var(--k-accent-soft)] border-[var(--k-accent)] text-[var(--k-accent)]"
+                  : "bg-white border-[var(--k-line)] k-faint";
+            const label = s.unreg ? "Unreg." : s.room || s.keyLabel || (s.uid ? "?" : "—");
+            const inner = (
+              <>
+                <span className="font-semibold">{s.n}</span>
+                <span className="truncate max-w-full px-1">{busySlot === s.n ? "…" : label}</span>
+              </>
+            );
+            const place = `col-span-2 ${i === 0 && row.length === 4 ? "col-start-2" : ""}`;
+            const base = `${place} ${large ? "h-16 text-[13px]" : "h-12 text-[11px]"} min-w-0 rounded-lg flex flex-col items-center justify-center leading-tight border ${cls}`;
+            return onSlotClick ? (
+              <button
+                key={s.n}
+                type="button"
+                title={slotTitle(s)}
+                onClick={() => onSlotClick(s)}
+                className={`${base} transition hover:ring-2 hover:ring-[var(--k-accent)] hover:ring-offset-1 focus-visible:ring-2 focus-visible:ring-[var(--k-accent)]`}
+              >
+                {inner}
+              </button>
+            ) : (
+              <div key={s.n} title={slotTitle(s)} className={base}>
+                {inner}
+              </div>
+            );
+          })}
+        </div>
+      ))}
     </div>
   );
 }
 
+/** Problems for one machine, shown inside its card. */
+export function MachineAlerts({ alerts }) {
+  if (!alerts?.length) return null;
+  return (
+    <ul className="flex flex-col gap-1.5">
+      {alerts.map((a, i) => (
+        <li
+          key={i}
+          className={`flex items-start gap-2 rounded-lg px-3 py-2 text-[13px] ${
+            a.tone === "red"
+              ? "bg-[var(--k-red-soft)] text-[var(--k-red)]"
+              : "bg-[var(--k-orange-soft)] text-[var(--k-orange)]"
+          }`}
+        >
+          <span aria-hidden="true">{a.tone === "red" ? "⚠︎" : "!"}</span>
+          <span>{a.short || a.text}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** Overview card. The whole card opens the machine page. */
-export function MachineCard({ m }) {
+export function MachineCard({ m, alerts = [] }) {
   return (
     <Link
       href={machineHref(m.code)}
@@ -176,6 +206,7 @@ export function MachineCard({ m }) {
         <span className="k-link text-[13px] shrink-0">Open →</span>
       </div>
       <StatusBadges m={m} />
+      <MachineAlerts alerts={alerts} />
       <CapacityBar m={m} />
       <SlotGrid m={m} />
       {m.outside.length > 0 && (
@@ -189,7 +220,7 @@ export function MachineCard({ m }) {
 }
 
 /** Table version of the machine cards. */
-export function MachinesTable({ cards, loading }) {
+export function MachinesTable({ cards, loading, alertsByMachine = new Map() }) {
   return (
     <DataTable
       title="Machines"
@@ -244,6 +275,12 @@ export function MachinesTable({ cards, loading }) {
           mobileText: (m) => `${m.linked}/${m.capacity} linked`,
         },
         { key: "free", header: "Can link", value: (m) => m.freeToLink },
+        {
+          key: "alerts",
+          header: "Alerts",
+          value: (m) => (alertsByMachine.get(m.code) || []).map((a) => a.short).join(" · "),
+          cell: (m) => <MachineAlerts alerts={alertsByMachine.get(m.code)} />,
+        },
         {
           key: "unreg",
           header: "Unreg.",

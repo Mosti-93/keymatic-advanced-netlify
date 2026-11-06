@@ -6,6 +6,7 @@ import {
   buildUpcoming,
   eventGroup,
   eventLabel,
+  slotRows,
   sortEvents,
 } from "./machineView";
 
@@ -98,10 +99,20 @@ describe("buildKeyStatus", () => {
 
     const alerts = buildAlerts({ cards: buildMachineCards({ machines, slots, keys, now }), keyStatus: rows });
     const text = alerts.map((a) => a.text).join("\n");
-    expect(text).toMatch(/Alpha \(A12\) is offline/);
-    expect(text).toMatch(/door open/);
-    expect(text).toMatch(/1 unregistered key in 111122/);
-    expect(text).toMatch(/1 key has not been returned: room 103/);
+    expect(text).toMatch(/Alpha \(A12\): Offline/);
+    expect(text).toMatch(/111122 \(A08\): Door open for/);
+    expect(text).toMatch(/111122 \(A08\): 1 unregistered key inside/);
+    expect(text).toMatch(/111122 \(A08\): 1 key not returned: room 103/);
+    expect(alerts.every((a) => a.machine)).toBe(true);
+  });
+});
+
+describe("slotRows", () => {
+  it("lays slots out 5, 4, 5, 4 like the machine", () => {
+    const sizes = (n) => slotRows(Array.from({ length: n }, (_, i) => i + 1)).map((r) => r.length);
+    expect(sizes(9)).toEqual([5, 4]);
+    expect(sizes(18)).toEqual([5, 4, 5, 4]);
+    expect(sizes(20)).toEqual([5, 4, 5, 4, 2]);
   });
 });
 
