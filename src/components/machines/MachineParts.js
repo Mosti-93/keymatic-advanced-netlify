@@ -112,6 +112,7 @@ function Legend({ cls, children }) {
 
 export function slotTitle(s) {
   if (s.unreg) return `Slot ${s.n}: unregistered key ${s.uid}`;
+  if (s.notSynced) return `Slot ${s.n}: ${s.room ? `room ${s.room}` : s.keyLabel} (press Sync keys)`;
   if (s.key)
     return `Slot ${s.n}: ${s.room ? `room ${s.room}` : s.keyLabel}${s.foreign ? " (linked to another machine)" : ""}`;
   if (s.uid) return `Slot ${s.n}: key ${s.uid}`;
@@ -131,11 +132,13 @@ export function SlotGrid({ m, onSlotClick, large = false, busySlot }) {
           {row.map((s, i) => {
             const cls = s.unreg
               ? `bg-[var(--k-orange-soft)] border-[var(--k-orange)] text-[var(--k-orange)] ${large ? "border-2 border-dashed" : ""}`
-              : s.key && !s.foreign
-                ? "bg-[var(--k-accent)] border-[var(--k-accent)] text-white"
-                : s.uid
-                  ? "bg-[var(--k-accent-soft)] border-[var(--k-accent)] text-[var(--k-accent)]"
-                  : `${large ? "bg-[#fafafa]" : "bg-white"} border-[var(--k-line)] k-faint`;
+              : s.notSynced
+                ? `bg-[var(--k-accent-soft)] border-[var(--k-accent)] text-[var(--k-accent)] ${large ? "border-2 border-dashed" : ""}`
+                : s.key && !s.foreign
+                  ? "bg-[var(--k-accent)] border-[var(--k-accent)] text-white"
+                  : s.uid
+                    ? "bg-[var(--k-accent-soft)] border-[var(--k-accent)] text-[var(--k-accent)]"
+                    : `${large ? "bg-[#fafafa]" : "bg-white"} border-[var(--k-line)] k-faint`;
             const label = s.unreg
               ? large
                 ? "Unknown"
