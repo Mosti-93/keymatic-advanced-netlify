@@ -14,7 +14,7 @@ const now = new Date("2026-11-05T12:00:00Z");
 describe("buildCommand", () => {
   it("builds the same signed command format as the pickup links", () => {
     expect(buildCommand("open_door", { machineCode: "A08", now })).toBe(
-      `PI:RELAY:ON|ts=${now.getTime() / 1000}|start=2026-11-05T11:58:00|exp=2026-11-05T12:05:00`
+      `PI:RELAY:ON|ts=${now.getTime() / 1000}|start=2026-11-04T12:00:00|exp=2026-11-06T12:00:00`
     );
     expect(buildCommand("unlock_slot", { machineCode: "A08", slot: 3, now })).toMatch(/^ESP:RELAY3:ON\|ts=/);
     expect(buildCommand("slot_status", { machineCode: "A08", slot: "12", now })).toMatch(/^ESP:LIMIT12:\?\|/);

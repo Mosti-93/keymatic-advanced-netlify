@@ -8,9 +8,9 @@ import DataTable from "@/components/DataTable";
 import ConfirmDialog from "@/components/machines/ConfirmDialog";
 import ViewSwitch, { useSavedView } from "@/components/machines/ViewSwitch";
 import {
-  AlertsStrip,
   CapacityBar,
   KeyStatusTable,
+  MachineAlerts,
   MachineLog,
   RefreshNote,
   SlotGrid,
@@ -22,7 +22,6 @@ const ACTION_TEXT = {
   open_door: { title: "Open the door?", confirm: "Open door", sending: "Opening the door…" },
   unlock_slot: { title: "Unlock this slot?", confirm: "Unlock slot", sending: "Unlocking the slot…" },
   sync: { title: "Sync keys to the machine?", confirm: "Sync keys", sending: "Sending the key list…" },
-  door_status: { sending: "Reading the door sensor…" },
   slot_status: { sending: "Reading the slot sensor…" },
 };
 
@@ -142,8 +141,10 @@ export default function MachinePage() {
         </div>
       )}
 
-      {!loading && (
-        <AlertsStrip alerts={alerts.map((a) => ({ ...a, href: a.href?.startsWith("#") ? a.href : undefined }))} />
+      {!loading && alerts.length > 0 && (
+        <div className="mt-6">
+          <MachineAlerts alerts={alerts} />
+        </div>
       )}
 
       {/* Remote control */}
@@ -163,14 +164,6 @@ export default function MachinePage() {
               onClick={() => ask("open_door")}
             >
               Open door
-            </button>
-            <button
-              type="button"
-              className="k-btn-secondary"
-              disabled={!m || busy || offline}
-              onClick={() => run("door_status")}
-            >
-              Check door
             </button>
             <button
               type="button"
