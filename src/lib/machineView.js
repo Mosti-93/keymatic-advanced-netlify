@@ -118,6 +118,7 @@ export function buildMachineCards({ machines = [], slots = [], keys = [], now = 
         doorAt,
         doorOpenTooLong: door === "open" && doorAt ? now - doorAt > DOOR_OPEN_ALERT_MS : false,
         hasCloudUrl: Boolean(clean(m.machine_cloud_url)),
+        timezone: clean(m.timezone),
       };
     })
     .sort((a, b) => a.code.localeCompare(b.code));

@@ -4,13 +4,9 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { runMachineCommand, useKeymaticData } from "@/utils/useKeymaticData";
 import { buildAlerts, buildKeyStatus, buildMachineCards, buildUpcoming, guestName, norm } from "@/lib/machineView";
-import DataTable from "@/components/DataTable";
 import ConfirmDialog from "@/components/machines/ConfirmDialog";
-import ViewSwitch, { useSavedView } from "@/components/machines/ViewSwitch";
 import {
-  CapacityBar,
   KeyStatusTable,
-  MachineAlerts,
   MachineLog,
   RefreshNote,
   SlotGrid,
@@ -31,7 +27,6 @@ export default function MachinePage() {
   const { keys, machines, users, clients, slots, events, errors, loading, updatedAt, reload } = useKeymaticData({
     machine: code,
   });
-  const [view, changeView] = useSavedView("keymatic.machine.view");
   const [openedAt] = useState(() => new Date());
   const now = updatedAt || openedAt;
 
@@ -96,39 +91,13 @@ export default function MachinePage() {
     );
   }
 
+  const unregSlots = m ? m.slots.filter((s) => s.unreg) : [];
+
   return (
     <div className="k-page">
       <Link href="/admin" className="k-link text-[14px]">
         ← Overview
       </Link>
-
-      <div className="mt-3 flex flex-wrap items-end justify-between gap-4 k-fade-in">
-        <div className="min-w-0">
-          <p className="text-[13px] font-medium tracking-wide k-faint">{m?.code || code}</p>
-          <h1 className="text-3xl font-semibold tracking-tight" style={{ letterSpacing: "-0.02em" }}>
-            {m?.name || "…"}
-          </h1>
-          {m?.place && (
-            <p className="text-[14px] k-muted">
-              {m.place}
-              {m.mapLink && (
-                <a href={m.mapLink} target="_blank" rel="noopener noreferrer" className="k-link ml-2">
-                  Map ↗
-                </a>
-              )}
-            </p>
-          )}
-          {m && (
-            <div className="mt-2">
-              <StatusBadges m={m} />
-            </div>
-          )}
-          <div className="mt-1">
-            <RefreshNote updatedAt={updatedAt} onRefresh={reload} />
-          </div>
-        </div>
-        <ViewSwitch view={view} onChange={changeView} />
-      </div>
 
       {errors.length > 0 && (
         <div className="k-alert-error mt-6">
@@ -141,45 +110,62 @@ export default function MachinePage() {
         </div>
       )}
 
-      {!loading && alerts.length > 0 && (
-        <div className="mt-6">
-          <MachineAlerts alerts={alerts} />
+      {/* Machine + remote control + slots, in one card */}
+      <section aria-label="Machine" className="mt-4 k-card !p-7 k-fade-in">
+        <div className="flex flex-wrap items-start justify-between gap-5">
+          <div className="min-w-0 flex flex-col gap-2">
+            <div className="flex items-center gap-2.5">
+              <span className="rounded-lg bg-[var(--k-accent-soft)] px-2.5 py-1 text-[13px] font-semibold text-[var(--k-accent)]">
+                {m?.code || code}
+              </span>
+              {m?.timezone && <span className="text-[13px] k-muted">{m.timezone}</span>}
+            </div>
+            <h1 className="text-[34px] leading-tight font-semibold" style={{ letterSpacing: "-0.02em" }}>
+              {m?.name || "…"}
+            </h1>
+            {m?.place && (
+              <p className="text-[15px] k-muted">
+                {m.place}
+                {m.mapLink && (
+                  <a href={m.mapLink} target="_blank" rel="noopener noreferrer" className="k-link ml-2">
+                    Map ↗
+                  </a>
+                )}
+              </p>
+            )}
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-2">
+              {m && <StatusBadges m={m} />}
+              <RefreshNote updatedAt={updatedAt} onRefresh={reload} />
+            </div>
+          </div>
+          <div className="flex flex-col items-start sm:items-end gap-2">
+            <div className="flex flex-wrap gap-2.5">
+              <button
+                type="button"
+                className="k-btn-primary"
+                disabled={!m || busy || offline}
+                onClick={() => ask("open_door")}
+              >
+                Open door
+              </button>
+              <button
+                type="button"
+                className="k-btn-secondary"
+                disabled={!m || busy || offline}
+                onClick={() => ask("sync")}
+              >
+                Sync keys
+              </button>
+              <Link href={`/create-key?machine=${encodeURIComponent(m?.code || code)}`} className="k-btn-secondary">
+                + Add key
+              </Link>
+            </div>
+            <p className="text-[12px] k-muted">Each action asks first and is saved in the log.</p>
+          </div>
         </div>
-      )}
 
-      {/* Remote control */}
-      <section aria-label="Remote control" className="mt-6 k-card-flat">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-[19px] font-semibold">Remote control</h2>
-            <p className="text-[13px] k-muted">
-              Every action asks first and is saved in the machine log with your name.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className="k-btn-primary"
-              disabled={!m || busy || offline}
-              onClick={() => ask("open_door")}
-            >
-              Open door
-            </button>
-            <button
-              type="button"
-              className="k-btn-secondary"
-              disabled={!m || busy || offline}
-              onClick={() => ask("sync")}
-            >
-              Sync keys
-            </button>
-            <Link href={`/create-key?machine=${encodeURIComponent(m?.code || code)}`} className="k-btn-secondary">
-              + Add key to this machine
-            </Link>
-          </div>
-        </div>
         {m?.online === false && (
-          <p className="mt-3 rounded-lg bg-[var(--k-red-soft)] px-3 py-2 text-[13px] text-[var(--k-red)]">
+          <p className="mt-4 rounded-lg bg-[var(--k-red-soft)] px-3 py-2 text-[13px] text-[var(--k-red)]">
             This machine is offline{m.lastSeen ? ` (last seen ${m.lastSeen.toLocaleString()})` : ""}, so commands will
             probably fail.{" "}
             {!forceControls && (
@@ -190,7 +176,7 @@ export default function MachinePage() {
           </p>
         )}
         {m && !m.hasCloudUrl && (
-          <p className="mt-3 text-[13px] text-[var(--k-orange)]">
+          <p className="mt-4 text-[13px] text-[var(--k-orange)]">
             No Pi address is saved for this machine.{" "}
             <Link href="/create-machine" className="underline">
               Add it on the Machines page
@@ -201,7 +187,7 @@ export default function MachinePage() {
         {feedback && (
           <div
             role="status"
-            className={`mt-3 flex items-start gap-3 rounded-lg px-3 py-2 text-[14px] ${
+            className={`mt-4 flex items-start gap-3 rounded-lg px-3 py-2 text-[14px] ${
               feedback.state === "sending"
                 ? "bg-[var(--k-accent-soft)] text-[var(--k-accent)]"
                 : feedback.state === "ok"
@@ -223,101 +209,106 @@ export default function MachinePage() {
             )}
           </div>
         )}
-      </section>
 
-      {/* Capacity + slots */}
-      <section aria-label="Slots" className="mt-6 k-card-flat">
-        {m ? (
-          <>
-            <CapacityBar m={m} />
-            <p className="mt-4 mb-3 text-[13px] k-muted">
-              Click a slot to unlock it, check its sensor, or register an unknown key.
-            </p>
-            {view === "machines" ? (
-              <SlotGrid m={m} large onSlotClick={(s) => setSlotOpen(s.n)} busySlot={runningSlot} />
-            ) : (
-              <DataTable
-                rows={m.slots}
-                getRowId={(s) => s.n}
-                onRowClick={(s) => setSlotOpen(s.n)}
-                exportName={`slots-${m.code}`}
-                searchPlaceholder="Search slot, room, UID"
-                defaultPageSize={50}
-                filters={[
-                  { key: "all", label: "All", test: () => true },
-                  { key: "in", label: "Key inside", test: (s) => !!s.uid && !s.unreg },
-                  { key: "unreg", label: "Unregistered", test: (s) => s.unreg },
-                  { key: "empty", label: "Empty", test: (s) => !s.uid },
-                ]}
-                columns={[
-                  {
-                    key: "n",
-                    header: "Slot",
-                    mobile: "title",
-                    cell: (s) => <span className="font-medium">{s.n}</span>,
-                  },
-                  {
-                    key: "content",
-                    header: "Contents",
-                    mobile: "subtitle",
-                    value: (s) =>
-                      s.unreg ? "Unregistered" : s.room ? `Room ${s.room}` : s.keyLabel || (s.uid ? s.uid : "Empty"),
-                    cell: (s) =>
-                      s.unreg ? (
-                        <span className="k-badge-orange">Unregistered</span>
-                      ) : s.uid ? (
-                        <>
-                          <div>{s.room ? `Room ${s.room}` : s.keyLabel || "Unknown key"}</div>
-                          {s.foreign && (
-                            <div className="text-[12px] text-[var(--k-orange)]">Linked to another machine</div>
-                          )}
-                        </>
-                      ) : (
-                        <span className="k-faint">Empty</span>
-                      ),
-                  },
-                  {
-                    key: "uid",
-                    header: "UID",
-                    cell: (s) => (s.uid ? <code className="text-[12px] k-muted">{s.uid}</code> : "—"),
-                  },
-                  {
-                    key: "status",
-                    header: "Key status",
-                    mobile: "badge",
-                    value: (s) => statusByKeyId.get(s.keyId)?.label || "",
-                    cell: (s) => {
-                      const st = statusByKeyId.get(s.keyId);
-                      return st ? <span className={st.badge}>{st.label}</span> : null;
-                    },
-                  },
-                  {
-                    key: "guest",
-                    header: "Guest",
-                    value: (s) => guestName(statusByKeyId.get(s.keyId)?.guest || statusByKeyId.get(s.keyId)?.next),
-                  },
-                ]}
+        {/* Slots */}
+        <div className="mt-6 border-t border-[var(--k-line)] pt-6 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h2 className="text-[21px] font-semibold">Slots</h2>
+            <p className="text-[14px] k-muted">Tap a slot to unlock it or register a key.</p>
+          </div>
+          {m && (
+            <div className="flex gap-7">
+              <SlotStat
+                value={m.unregIn}
+                label={m.unregIn === 1 ? "Unknown key" : "Unknown keys"}
+                warn={m.unregIn > 0}
               />
-            )}
-          </>
-        ) : (
-          <div className="h-64 animate-pulse" />
+              <SlotStat value={m.inCount} total={m.capacity} label="Slots used" />
+              <SlotStat value={m.freeSlots} label="Empty" />
+            </div>
+          )}
+        </div>
+        <div className="mt-6 mx-auto max-w-[660px]">
+          {m ? (
+            <SlotGrid m={m} large onSlotClick={(s) => setSlotOpen(s.n)} busySlot={runningSlot} />
+          ) : (
+            <div className="h-48 animate-pulse" />
+          )}
+        </div>
+        {m && (
+          <p className="mt-5 flex flex-wrap justify-center gap-5 text-[13px] k-muted">
+            <SlotLegend cls="bg-[var(--k-accent)]">Key inside</SlotLegend>
+            <SlotLegend cls="bg-[var(--k-orange-soft)] border-2 border-dashed border-[var(--k-orange)]">
+              Unknown key
+            </SlotLegend>
+            <SlotLegend cls="bg-[#fafafa] border border-[#c7c7cc]">Empty</SlotLegend>
+          </p>
+        )}
+        {m?.outside.length > 0 && (
+          <p className="mt-4 rounded-lg bg-[var(--k-orange-soft)] px-3 py-2 text-[13px] text-[var(--k-orange)]">
+            {m.outside.map((s) => `Room ${s.room} is reported in slot ${s.n}`).join(" · ")}, but this machine has{" "}
+            {m.capacity} slots. Check the machine setup.
+          </p>
         )}
       </section>
 
-      <div className="mt-6">
+      {/* Needs attention, with a button to fix it */}
+      {!loading && alerts.length > 0 && (
+        <ul className="mt-5 flex flex-col gap-2">
+          {alerts.map((a, i) => {
+            const unreg = /unregistered/i.test(a.short || "");
+            return (
+              <li
+                key={i}
+                className={`flex flex-wrap items-center justify-between gap-3 rounded-[14px] px-[18px] py-3 text-[14px] ${
+                  a.tone === "red"
+                    ? "bg-[var(--k-red-soft)] text-[var(--k-red)]"
+                    : "bg-[var(--k-orange-soft)] text-[#8a3f00]"
+                }`}
+              >
+                <span>
+                  {unreg && unregSlots.length > 0 ? (
+                    <>
+                      <b>
+                        Slot{unregSlots.length > 1 ? "s" : ""} {unregSlots.map((s) => s.n).join(", ")}
+                      </b>{" "}
+                      {unregSlots.length > 1 ? "have keys that are" : "has a key that is"} not registered.
+                    </>
+                  ) : (
+                    a.short || a.text
+                  )}
+                </span>
+                {unreg && unregSlots.length > 0 && (
+                  <button
+                    type="button"
+                    className="rounded-full bg-white px-4 py-2.5 text-[14px] font-medium min-h-[44px]"
+                    onClick={() => setSlotOpen(unregSlots[0].n)}
+                  >
+                    Register it
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <div className="mt-5">
+        <UpcomingList items={upcoming} loading={loading} showMachine={false} />
+      </div>
+
+      <div id="keys" className="mt-5 scroll-mt-20">
         <KeyStatusTable
           rows={myKeys}
           loading={loading}
           users={users}
           showMachine={false}
-          title="Keys of this machine"
+          title="Keys"
           subtitle="Keys linked to this machine, plus any key sitting in its slots."
         />
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-2 items-start">
-        <UpcomingList items={upcoming} loading={loading} showMachine={false} />
+      <div className="mt-5">
         <MachineLog events={events} loading={loading} showMachine={false} />
       </div>
 
@@ -480,5 +471,26 @@ function SlotPanel({ m, s, status, disabled, onClose, onUnlock, onCheck }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function SlotStat({ value, total, label, warn = false }) {
+  return (
+    <div>
+      <p className={`text-[26px] font-semibold leading-tight ${warn ? "text-[var(--k-orange)]" : ""}`}>
+        {value}
+        {total != null && <span className="text-[17px] font-normal k-faint">/{total}</span>}
+      </p>
+      <p className="text-[13px] k-muted">{label}</p>
+    </div>
+  );
+}
+
+function SlotLegend({ cls, children }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`inline-block h-3 w-3 rounded box-border ${cls}`} aria-hidden="true" />
+      {children}
+    </span>
   );
 }
