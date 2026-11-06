@@ -1,6 +1,6 @@
 import { requireRole } from "@/utils/requireRole";
 import { getServiceClient } from "@/lib/pickupServer";
-import { ACTIONS, sendMachineAction, auditDetail } from "@/lib/machineCommands";
+import { ACTIONS, sendMachineAction, auditDetail, promoteSyncedSlots } from "@/lib/machineCommands";
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -48,6 +48,16 @@ export async function POST(request, context) {
   }
 
   const outcome = await sendMachineAction({ machine, action, slot, secret: process.env.SIGNING_SECRET });
+
+  if (action === "sync" && outcome.ok) {
+    try {
+      const fixed = await promoteSyncedSlots(sb, machine.machine_id);
+      if (fixed)
+        outcome.message += ` ${fixed === 1 ? "1 key in its slot is" : `${fixed} keys in their slots are`} now known.`;
+    } catch (e) {
+      console.warn("[command] slot update after sync failed:", e?.message);
+    }
+  }
 
   if (def.log) {
     try {

@@ -238,3 +238,42 @@ export function auditDetail({ actor, reason, outcome }) {
     .filter(Boolean)
     .join(" · ");
 }
+
+const up = (v) =>
+  String(v ?? "")
+    .trim()
+    .toUpperCase();
+
+/**
+ * After Sync keys the Pi knows the new keys, but it does not rewrite the
+ * key_slot_presence rows of keys already sitting in a slot: they keep the UID in
+ * NON_REG_UID ("unregistered"). Return the rows of this machine whose NON_REG_UID
+ * is now a registered key, so they can be moved to UID.
+ */
+export function slotsToPromote({ machineCode, slots = [], keys = [] }) {
+  const known = new Set(keys.map((k) => up(k.UID)).filter(Boolean));
+  return slots.filter(
+    (s) => up(s.machine_id) === up(machineCode) && !s.UID && s.NON_REG_UID && known.has(up(s.NON_REG_UID))
+  );
+}
+
+/** Move synced keys from NON_REG_UID to UID. Returns how many slots were fixed. */
+export async function promoteSyncedSlots(sb, machineCode) {
+  const [{ data: slots, error: e1 }, { data: keys, error: e2 }] = await Promise.all([
+    sb.from("key_slot_presence").select("machine_id, slot_number, UID, NON_REG_UID").not("NON_REG_UID", "is", null),
+    sb.from("keys").select("UID").not("UID", "is", null),
+  ]);
+  if (e1 || e2) throw new Error((e1 || e2).message);
+  let fixed = 0;
+  for (const s of slotsToPromote({ machineCode, slots, keys })) {
+    const { error } = await sb
+      .from("key_slot_presence")
+      .update({ UID: up(s.NON_REG_UID), NON_REG_UID: null })
+      .eq("machine_id", s.machine_id)
+      .eq("slot_number", s.slot_number)
+      .is("UID", null);
+    if (error) throw new Error(error.message);
+    fixed += 1;
+  }
+  return fixed;
+}

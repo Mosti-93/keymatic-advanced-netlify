@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import crypto from "crypto";
 import {
+  slotsToPromote,
   auditDetail,
   buildCommand,
   commandUrl,
@@ -87,5 +88,19 @@ describe("sendMachineAction", () => {
     expect(auditDetail({ actor: "a@b.c", reason: "guest called", outcome: { message: "Door unlocked" } })).toBe(
       "remote by a@b.c · reason: guest called · Door unlocked"
     );
+  });
+});
+
+describe("slotsToPromote", () => {
+  it("picks slots of this machine whose unregistered UID is now a registered key", () => {
+    const slots = [
+      { machine_id: "A08", slot_number: 2, UID: null, NON_REG_UID: "046d3a16bf2a81" },
+      { machine_id: "A08", slot_number: 4, UID: null, NON_REG_UID: "FFFF" }, // still unknown
+      { machine_id: "A12", slot_number: 3, UID: null, NON_REG_UID: "046D3A16BF2A81" }, // other machine
+      { machine_id: "A08", slot_number: 5, UID: "1D9F", NON_REG_UID: null },
+    ];
+    const keys = [{ UID: "046D3A16BF2A81" }, { UID: "1D9F" }];
+    const out = slotsToPromote({ machineCode: "a08", slots, keys });
+    expect(out.map((s) => s.slot_number)).toEqual([2]);
   });
 });

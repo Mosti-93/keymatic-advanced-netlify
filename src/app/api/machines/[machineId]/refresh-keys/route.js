@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { requireRole } from "@/utils/requireRole";
 import { getServiceClient } from "@/lib/pickupServer";
+import { promoteSyncedSlots } from "@/lib/machineCommands";
 
 // Resolve which Pi URL we should talk to for a given machine ID:
 // 1) MACHINE_<ID>_URL env var (override), 2) machines.machine_cloud_url
@@ -128,10 +129,18 @@ export async function POST(request, context) {
     );
   }
 
-  // 6. Success
+  // 6. Success. Keys already in a slot stay "unregistered" in the database until
+  // the Pi rereads them, so move them to UID now that the machine knows them.
+  let slotsFixed = 0;
+  try {
+    slotsFixed = await promoteSyncedSlots(getServiceClient(), dashboardMachineId);
+  } catch (e) {
+    console.warn("[refresh-keys] slot update after sync failed:", e?.message);
+  }
   return new Response(
     JSON.stringify({
       ok: true,
+      slotsFixed,
       machine: dashboardMachineId,
       piStatus,
       piReply: piJson,
