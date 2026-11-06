@@ -125,18 +125,22 @@ export function slotTitle(s) {
  */
 export function SlotGrid({ m, onSlotClick, large = false, busySlot }) {
   return (
-    <div className={`flex flex-col ${large ? "gap-2" : "gap-1.5"}`}>
+    <div className={`flex flex-col ${large ? "gap-3" : "gap-1.5"}`}>
       {slotRows(m.slots).map((row, r) => (
-        <div key={r} className={`grid grid-cols-10 ${large ? "gap-2" : "gap-1.5"}`}>
+        <div key={r} className={`grid grid-cols-10 ${large ? "gap-3" : "gap-1.5"}`}>
           {row.map((s, i) => {
             const cls = s.unreg
-              ? "bg-[var(--k-orange-soft)] border-[var(--k-orange)] text-[var(--k-orange)]"
+              ? `bg-[var(--k-orange-soft)] border-[var(--k-orange)] text-[var(--k-orange)] ${large ? "border-2 border-dashed" : ""}`
               : s.key && !s.foreign
                 ? "bg-[var(--k-accent)] border-[var(--k-accent)] text-white"
                 : s.uid
                   ? "bg-[var(--k-accent-soft)] border-[var(--k-accent)] text-[var(--k-accent)]"
-                  : "bg-white border-[var(--k-line)] k-faint";
-            const label = s.unreg ? "Unreg." : s.room || s.keyLabel || (s.uid ? "?" : "—");
+                  : `${large ? "bg-[#fafafa]" : "bg-white"} border-[var(--k-line)] k-faint`;
+            const label = s.unreg
+              ? large
+                ? "Unknown"
+                : "Unreg."
+              : s.room || s.keyLabel || (s.uid ? "?" : large ? "Empty" : "—");
             const inner = (
               <>
                 <span className="font-semibold">{s.n}</span>
@@ -144,7 +148,7 @@ export function SlotGrid({ m, onSlotClick, large = false, busySlot }) {
               </>
             );
             const place = `col-span-2 ${i === 0 && row.length === 4 ? "col-start-2" : ""}`;
-            const base = `${place} ${large ? "h-16 text-[13px]" : "h-12 text-[11px]"} min-w-0 rounded-lg flex flex-col items-center justify-center leading-tight border ${cls}`;
+            const base = `${place} ${large ? "h-[84px] text-[12px] gap-1 rounded-[14px] [&>span:first-child]:text-[18px]" : "h-12 text-[11px] rounded-lg"} min-w-0 flex flex-col items-center justify-center leading-tight border ${cls}`;
             return onSlotClick ? (
               <button
                 key={s.n}
