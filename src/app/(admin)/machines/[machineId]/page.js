@@ -278,6 +278,16 @@ export default function MachinePage() {
                     a.short || a.text
                   )}
                 </span>
+                {a.sync && (
+                  <button
+                    type="button"
+                    className="rounded-full bg-white px-4 py-2.5 text-[14px] font-medium min-h-[44px]"
+                    disabled={busy || offline}
+                    onClick={() => ask("sync")}
+                  >
+                    Sync keys
+                  </button>
+                )}
                 {unreg && unregSlots.length > 0 && (
                   <button
                     type="button"
@@ -321,6 +331,7 @@ export default function MachinePage() {
           disabled={busy || offline}
           onClose={() => setSlotOpen(null)}
           onUnlock={() => ask("unlock_slot", slot.n)}
+          onSync={() => ask("sync")}
           onCheck={() => {
             setSlotOpen(null);
             run("slot_status", slot.n);
@@ -377,7 +388,7 @@ export default function MachinePage() {
 }
 
 /** Details and actions for one slot. */
-function SlotPanel({ m, s, status, disabled, onClose, onUnlock, onCheck }) {
+function SlotPanel({ m, s, status, disabled, onClose, onUnlock, onCheck, onSync }) {
   const registerHref = `/create-key?machine=${encodeURIComponent(m.code)}&uid=${encodeURIComponent(s.uid)}`;
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/30 p-4" onClick={onClose}>
@@ -445,6 +456,13 @@ function SlotPanel({ m, s, status, disabled, onClose, onUnlock, onCheck }) {
           )}
         </dl>
 
+        {s.notSynced && (
+          <div className="mt-4 rounded-lg bg-[var(--k-accent-soft)] px-3 py-2 text-[13px] text-[var(--k-accent)]">
+            This key is registered, but the machine still has the old key list. Press <b>Sync keys</b> so the machine
+            knows it.
+          </div>
+        )}
+
         {s.unreg && (
           <div className="mt-4 rounded-lg bg-[var(--k-orange-soft)] px-3 py-2 text-[13px] text-[var(--k-orange)]">
             The machine doesn’t know this key. Register it to link it to {m.code}; then press <b>Sync keys</b>.
@@ -456,6 +474,11 @@ function SlotPanel({ m, s, status, disabled, onClose, onUnlock, onCheck }) {
             <Link href={registerHref} className="k-btn-primary">
               Register this key
             </Link>
+          )}
+          {s.notSynced && (
+            <button type="button" className="k-btn-primary" disabled={disabled} onClick={onSync}>
+              Sync keys
+            </button>
           )}
           {s.key && (
             <Link href={`/create-key?edit=${encodeURIComponent(s.keyId)}`} className="k-btn-secondary">

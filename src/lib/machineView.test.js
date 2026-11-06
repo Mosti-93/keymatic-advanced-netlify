@@ -133,3 +133,26 @@ describe("machine log helpers", () => {
     expect(list.map((e) => e.id)).toEqual([2, 1]);
   });
 });
+
+describe("key registered on the website but not synced to the machine", () => {
+  const k = { id: "kN", uuid: "uN", key_id: "new test", UID: "046D3A16BF2A81", machine_id: "A08" };
+  const s = [{ machine_id: "A08", slot_number: 2, UID: null, NON_REG_UID: "046d3a16bf2a81" }];
+  const [a08] = buildMachineCards({ machines, slots: s, keys: [k], now });
+
+  it("shows the slot as that key, not as unknown", () => {
+    const slot = a08.slots[1];
+    expect(slot.unreg).toBe(false);
+    expect(slot.notSynced).toBe(true);
+    expect(slot.keyId).toBe("kN");
+    expect(a08.unregIn).toBe(0);
+  });
+
+  it("lists the key as in the machine and asks for Sync keys", () => {
+    const [row] = buildKeyStatus({ keys: [k], slots: s, clients: [], machines, now });
+    expect(row.state).toBe("in");
+    expect(row.detail).toContain("Sync keys");
+    const alerts = buildAlerts({ cards: [a08], keyStatus: [row] });
+    expect(alerts.some((a) => a.sync)).toBe(true);
+    expect(alerts.some((a) => /unregistered/.test(a.short))).toBe(false);
+  });
+});

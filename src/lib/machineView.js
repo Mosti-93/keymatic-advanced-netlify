@@ -37,7 +37,12 @@ export function findMachineForKey(key, machines) {
 
 /** Map of upper-case UID -> slot row, for slots holding a registered key. */
 function slotsByUid(slots) {
-  return new Map((slots || []).filter((s) => s.UID).map((s) => [norm(s.UID), s]));
+  const map = new Map();
+  // A key the machine reports as unregistered (NON_REG_UID) may already be registered here,
+  // just not synced to the machine yet. It is still physically in that slot.
+  for (const s of slots || []) if (!s.UID && s.NON_REG_UID) map.set(norm(s.NON_REG_UID), { ...s, notSynced: true });
+  for (const s of slots || []) if (s.UID) map.set(norm(s.UID), s);
+  return map;
 }
 
 /**
@@ -61,12 +66,16 @@ export function buildMachineCards({ machines = [], slots = [], keys = [], now = 
         const s = bySlot.get(i + 1);
         const uid = s?.UID ? norm(s.UID) : "";
         // A key the machine does not know (not in its whitelist) is reported in NON_REG_UID.
-        const unregUid = !uid && s?.NON_REG_UID ? norm(s.NON_REG_UID) : "";
-        const key = uid ? keyByUid.get(uid) || null : null;
+        const nonReg = !uid && s?.NON_REG_UID ? norm(s.NON_REG_UID) : "";
+        // Registered on the website but the machine's key list is old: not unknown, just needs Sync keys.
+        const syncKey = nonReg ? keyByUid.get(nonReg) || null : null;
+        const unregUid = syncKey ? "" : nonReg;
+        const key = uid ? keyByUid.get(uid) || null : syncKey;
         return {
           n: i + 1,
-          uid: uid || unregUid,
+          uid: uid || nonReg,
           unreg: Boolean(unregUid),
+          notSynced: Boolean(syncKey),
           key,
           keyId: key?.id ?? null,
           room: key?.room_number ? String(key.room_number) : "",
@@ -179,7 +188,7 @@ export function buildKeyStatus({ keys = [], slots = [], clients = [], machines =
     let since = null;
     let guest = null;
     if (slot) {
-      const where = `${clean(slot.machine_id)} · slot ${slot.slot_number}`;
+      const where = `${clean(slot.machine_id)} · slot ${slot.slot_number}${slot.notSynced ? " · press Sync keys" : ""}`;
       if (current) {
         state = "waiting";
         guest = current;
@@ -292,6 +301,17 @@ export function buildAlerts({ cards = [], keyStatus = [] }) {
     if (m.online === false) add("red", `Offline${m.lastSeen ? ` · last seen ${fmtAgo(m.lastSeen)}` : ""}`);
     if (m.doorOpenTooLong) add("orange", `Door open for ${fmtAgo(m.doorAt, "")}`);
     if (m.unregIn > 0) add("orange", `${m.unregIn} unregistered ${m.unregIn === 1 ? "key" : "keys"} inside`);
+    const notSynced = m.slots.filter((s) => s.notSynced);
+    if (notSynced.length) {
+      alerts.push({
+        tone: "orange",
+        machine: m.code,
+        href,
+        sync: true,
+        short: `Slot ${notSynced.map((s) => s.n).join(", ")}: registered, but the machine doesn't know yet. Press Sync keys.`,
+        text: `${m.name} (${m.code}): ${notSynced.length === 1 ? "1 key needs" : `${notSynced.length} keys need`} Sync keys`,
+      });
+    }
     if (m.overLinked) add("orange", `${m.linked} keys linked but only ${m.capacity} slots`);
     const overdue = keyStatus.filter((r) => r.state === "overdue" && norm(r.machineCode) === norm(m.code));
     if (overdue.length) add("red", notReturnedText(overdue));
